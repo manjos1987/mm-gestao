@@ -345,7 +345,7 @@ export default function App(){
         {tab==="relatorio"&& <RelTab report={report} date={date} setDate={setDate} projects={projects} cont={cont} normA={normA} team={team} weights={weights} assignedCnt={assignedCnt} colorMap={colorMap} genMsg={genMsg} aiLoad={aiLoad} aiMsg={aiMsg} exportExcel={()=>exportExcel(report,date,team,normA,projects,cont,weights)} exportPDF={()=>exportPDF(report,date,projects,cont,normA,team,weights)}/>}
         {tab==="projetos" && <ProjTab projects={projects} cont={cont} saveProjects={saveProjects} saveCont={saveCont} colorMap={colorMap} diary={diary} saveDiary={saveDiary} team={team} history={history}/>}
         {tab==="equipe"   && <EquipeTab team={team} saveTeam={saveTeam} weights={weights} saveWeights={saveWeights}/>}
-        {{tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap} saveHistory={async(h)=>{setHistory(h);await persist("history",h);}}/>}
+        {tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap} saveHistory={async(h)=>{setHistory(h);await persist("history",h);}}/>}
       </div>
 
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
