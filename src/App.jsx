@@ -778,40 +778,75 @@ function ProjCard(props){
 }
 
 function Lbl(lprops){return <div style={{marginBottom:"10px"}}><div style={{fontSize:"10px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".06em",marginBottom:"5px"}}>{lprops.t}</div>{lprops.children}</div>;}
+
+function ContratanteField(props){
+  var cont=props.cont,saveCont=props.saveCont,value=props.value,onChange=props.onChange;
+  var init=cont.find(function(c){return c.id===value;});
+  var ivs=useState(init?init.name:""); var inputVal=ivs[0],setInputVal=ivs[1];
+  var ops=useState(false); var open=ops[0],setOpen=ops[1];
+  var filtered=cont.filter(function(c){return c.name.toLowerCase().includes(inputVal.toLowerCase());});
+  var exactMatch=cont.find(function(c){return c.name.toLowerCase()===inputVal.trim().toLowerCase();});
+  function select(c){onChange(c.id);setInputVal(c.name);setOpen(false);}
+  function createNew(){
+    if(!inputVal.trim())return;
+    if(exactMatch){select(exactMatch);return;}
+    var c={id:"c"+uid(),name:inputVal.trim(),contact:""};
+    saveCont([...cont,c]);
+    onChange(c.id);
+    setOpen(false);
+  }
+  function deleteCont(id,e){
+    e.preventDefault();e.stopPropagation();
+    if(!window.confirm("Apagar contratante da lista?"))return;
+    saveCont(cont.filter(function(c){return c.id!==id;}));
+    if(value===id){onChange("");setInputVal("");}
+  }
+  return (
+    <div style={{position:"relative"}}>
+      <input
+        value={inputVal}
+        onChange={function(e){setInputVal(e.target.value);setOpen(true);onChange("");}}
+        onFocus={function(){setOpen(true);}}
+        onBlur={function(){setTimeout(function(){setOpen(false);},200);}}
+        onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();createNew();}if(e.key==="Escape")setOpen(false);}}
+        placeholder="Digite ou selecione o contratante..."
+        style={Object.assign({},B.inp,value?{borderColor:RED+"60"}:{})}
+      />
+      {open&&(
+        <div style={{position:"absolute",top:"100%",left:0,right:0,background:"#fff",border:"1px solid #e5e7eb",borderRadius:"6px",boxShadow:"0 4px 12px rgba(0,0,0,.1)",zIndex:50,maxHeight:"180px",overflowY:"auto",marginTop:"2px"}}>
+          {filtered.map(function(c){
+            return (
+              <div key={c.id} onMouseDown={function(){select(c);}} style={{display:"flex",alignItems:"center",padding:"8px 10px",cursor:"pointer",background:value===c.id?RED+"0d":"transparent"}}>
+                <span style={{flex:1,fontSize:"13px",color:"#111"}}>{c.name}</span>
+                <button onMouseDown={function(e){deleteCont(c.id,e);}} style={{background:"none",border:"none",cursor:"pointer",color:"#dc2626",fontSize:"16px",padding:"0 4px",lineHeight:1,opacity:.4}}>×</button>
+              </div>
+            );
+          })}
+          {inputVal.trim()&&!exactMatch&&(
+            <div onMouseDown={createNew} style={{padding:"8px 10px",fontSize:"13px",color:RED,cursor:"pointer",borderTop:filtered.length?"1px solid #f0f0f0":"none",fontWeight:600}}>
+              + Criar "{inputVal.trim()}"
+            </div>
+          )}
+          {!filtered.length&&!inputVal.trim()&&(
+            <div style={{padding:"10px",fontSize:"12px",color:"#9ca3af",textAlign:"center"}}>Nenhum contratante cadastrado</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProjForm(props){
   var cont=props.cont,saveCont=props.saveCont,initial=props.initial,onSave=props.onSave,onCancel=props.onCancel,onDelete=props.onDelete;
   var blank={cId:"",name:"",svcs:[],city:"",st:"",country:"Brasil",status:"ativo",note:""};
   var fs=useState(initial||blank); var f=fs[0],setF=fs[1];
-  var ncs=useState(""); var nc=ncs[0],setNc=ncs[1];
-  var acs=useState(false); var addC=acs[0],setAddC=acs[1];
   function tSvc(s){setF(function(p){return Object.assign({},p,{svcs:p.svcs.includes(s)?p.svcs.filter(function(x){return x!==s;}):[...p.svcs,s]});});}
-  function createCont(){
-    if(!nc.trim())return;
-    var c={id:"c"+uid(),name:nc.trim(),contact:""};
-    saveCont([...cont,c]);
-    setF(function(p){return Object.assign({},p,{cId:c.id});});
-    setNc("");setAddC(false);
-  }
-  
+
   return (
     <div style={{background:"#fff",borderRadius:"10px",padding:"18px",marginBottom:"1.25rem",border:"1px solid "+RED+"30"}}>
       <div style={{fontSize:"13px",fontWeight:700,color:"#111",marginBottom:"14px",paddingBottom:"10px",borderBottom:"1px solid #f0f0f0"}}>{initial?"Editar projeto":"Novo projeto"}</div>
       <Lbl t="Contratante *">
-        {addC?(
-          <div style={{display:"flex",gap:"6px"}}>
-            <input placeholder="Nome" value={nc} onChange={function(e){setNc(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")createCont();}} style={B.inp}/>
-            <button onClick={createCont} style={Object.assign({},B.pri,{padding:"7px 14px"})}>Criar</button>
-            <button onClick={function(){setAddC(false);}} style={Object.assign({},B.sec,{padding:"7px 10px"})}>x</button>
-          </div>
-        ):(
-          <div style={{display:"flex",gap:"6px"}}>
-            <select value={f.cId} onChange={function(e){setF(function(p){return Object.assign({},p,{cId:e.target.value});});}} style={Object.assign({},B.inp,{flex:1})}>
-              <option value="">Selecionar...</option>
-              {cont.map(function(c){return <option key={c.id} value={c.id}>{c.name}</option>;})}
-            </select>
-            <button onClick={function(){setAddC(true);}} style={Object.assign({},B.sec,{fontSize:"12px",padding:"7px 10px"})}>+ Novo</button>
-          </div>
-        )}
+        <ContratanteField cont={cont} saveCont={saveCont} value={f.cId} onChange={function(cId){setF(function(p){return Object.assign({},p,{cId:cId});});}}/>
       </Lbl>
       <Lbl t="Nome *"><input placeholder="Ex: Residencia Lago Sul" value={f.name} onChange={function(e){setF(function(p){return Object.assign({},p,{name:e.target.value});});}} style={B.inp}/></Lbl>
       <Lbl t="Servicos">
