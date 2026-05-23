@@ -429,7 +429,7 @@ const statusPie=[
                 <span style={{fontSize:"13px",fontWeight:700,color:"#374151"}}>{m.pct.toFixed(1)}%</span>
               </div>
               <div style={{height:"7px",background:"#f3f4f6",borderRadius:"4px",overflow:"hidden"}}>
-                <div style={{height:"100%",width:`${Math.min(m.pct,100)}%`,background:rc,borderRadius:"4px"}}/>
+                <div style={{height:"100%",width:(Math.min(m.pct,100))+"%",background:rc,borderRadius:"4px"}}/>
               </div>
             </div>
           );})}
