@@ -701,7 +701,7 @@ function ProjTab(props){
               <span style={{fontSize:"11px",color:"#9ca3af"}}>{ps.length} proj.</span>
               <div style={{marginLeft:"auto",display:"flex",gap:"8px",alignItems:"center"}}>
                 <span style={{fontSize:"9px",color:"#d1d5db"}}>duplo clique para editar</span>
-                {ps.length===0&&(
+                {(
                   <button onClick={function(){if(window.confirm("Apagar contratante "+ct.name+"?"))saveCont(cont.filter(function(c){return c.id!==ct.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"11px",padding:"1px 6px",border:"1px solid #fecaca",borderRadius:"4px"})}>apagar</button>
                 )}
               </div>
@@ -777,6 +777,7 @@ function ProjCard(props){
   );
 }
 
+function Lbl(lprops){return <div style={{marginBottom:"10px"}}><div style={{fontSize:"10px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".06em",marginBottom:"5px"}}>{lprops.t}</div>{lprops.children}</div>;}
 function ProjForm(props){
   var cont=props.cont,saveCont=props.saveCont,initial=props.initial,onSave=props.onSave,onCancel=props.onCancel,onDelete=props.onDelete;
   var blank={cId:"",name:"",svcs:[],city:"",st:"",country:"Brasil",status:"ativo",note:""};
@@ -791,7 +792,7 @@ function ProjForm(props){
     setF(function(p){return Object.assign({},p,{cId:c.id});});
     setNc("");setAddC(false);
   }
-  function Lbl(lprops){return <div style={{marginBottom:"10px"}}><div style={{fontSize:"10px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".06em",marginBottom:"5px"}}>{lprops.t}</div>{lprops.children}</div>;}
+  
   return (
     <div style={{background:"#fff",borderRadius:"10px",padding:"18px",marginBottom:"1.25rem",border:"1px solid "+RED+"30"}}>
       <div style={{fontSize:"13px",fontWeight:700,color:"#111",marginBottom:"14px",paddingBottom:"10px",borderBottom:"1px solid #f0f0f0"}}>{initial?"Editar projeto":"Novo projeto"}</div>
