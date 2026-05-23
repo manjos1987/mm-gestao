@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
+import html2canvas from "html2canvas";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 🔴 PASSO 1: Cole aqui os dados do seu projeto Firebase
@@ -28,9 +29,9 @@ const TODAY   = new Date().toISOString().split("T")[0];
 const DAYS_PT = ["domingo","segunda-feira","terça-feira","quarta-feira","quinta-feira","sexta-feira","sábado"];
 const RED     = "#C8102E";
 const COLORS  = ["#C8102E","#2563EB","#059669","#D97706","#7C3AED","#0891B2","#B45309","#0D9488","#4F46E5","#065F46","#1D4ED8","#6D28D9","#BE185D","#92400E","#0E7490","#9D174D"];
-const ROLES   = ["Sócio","Arquiteto","Estagiário","Parceiro"];
+const ROLES   = ["Sócio","Coordenador","Arquiteto","Estagiário","Parceiro"];
 const SERVICES= ["Projeto arquitetônico","Projeto legal","Projeto executivo","Imagens / Renderização","Maquete","Interiores","Urbanismo","Estudo de Viabilidade"];
-const DW      = {Sócio:3,Arquiteto:2,Estagiário:0.5,Parceiro:1};
+const DW      = {Sócio:3,Coordenador:2.5,Arquiteto:2,Estagiário:1,Parceiro:1.5};
 const ST_CYC  = {ativo:"aguardando",aguardando:"bloqueado",bloqueado:"ativo"};
 const STATUS  = {
   ativo:     {label:"Ativo",      bg:"#dcfce7",color:"#15803d",hex:"#16a34a"},
@@ -38,8 +39,9 @@ const STATUS  = {
   bloqueado: {label:"Bloqueado",  bg:"#fee2e2",color:"#dc2626",hex:"#dc2626"},
   concluido: {label:"Concluído",  bg:"#f3f4f6",color:"#6b7280",hex:"#9ca3af"},
 };
-const ROLE_COLOR={Sócio:"#111",Arquiteto:"#2563EB",Estagiário:"#059669",Parceiro:"#D97706"};
+const ROLE_COLOR={Sócio:"#111",Coordenador:"#7C3AED",Arquiteto:"#2563EB",Estagiário:"#059669",Parceiro:"#D97706"};
 
+const UFS=["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
 // ── Dados iniciais ────────────────────────────────────────────────────────────
 const INIT_C=[
   {id:"c1",name:"Canaã",contact:""},{id:"c2",name:"Santorini",contact:""},
@@ -85,21 +87,22 @@ function normAlloc(a){
 }
 
 function calcReport(alloc,team,projects,weights={}){
-  const n=normAlloc(alloc),bp={};
-  team.forEach(m=>{
-    const pids=n[m.id]||[];if(!pids.length)return;
-    const w=wOf(m.role,weights),c=w/pids.length;
-    pids.forEach(pid=>{
-      if(!bp[pid])bp[pid]={wpts:0,people:[],detail:[]};
-      bp[pid].wpts+=c;bp[pid].people.push(m.name);
-      bp[pid].detail.push({name:m.name,role:m.role,w:+c.toFixed(2)});
-    });
-  });
-  const tot=Object.values(bp).reduce((s,v)=>s+v.wpts,0);
-  return Object.entries(bp).map(([pid,{wpts,people,detail}])=>{
-    const p=projects.find(x=>x.id===pid);
-    return{pid,name:p?.name||pid,people,detail,wpts:+wpts.toFixed(2),pct:tot?wpts/tot*100:0};
-  }).sort((a,b)=>b.wpts-a.wpts);
+const n=normAlloc(alloc),bp={};
+team.forEach(m=>{
+const pids=n[m.id]||[];if(!pids.length)return;
+const w=wOf(m.role,weights);
+// Peso FIXO: cada projeto recebe o peso inteiro da pessoa
+pids.forEach(pid=>{
+if(!bp[pid])bp[pid]={wpts:0,people:[],detail:[]};
+bp[pid].wpts+=w;bp[pid].people.push(m.name);
+bp[pid].detail.push({name:m.name,role:m.role,w:+w.toFixed(2)});
+});
+});
+const tot=Object.values(bp).reduce((s,v)=>s+v.wpts,0);
+return Object.entries(bp).map(([pid,{wpts,people,detail}])=>{
+const p=projects.find(x=>x.id===pid);
+return{pid,name:p?.name||pid,people,detail,wpts:+wpts.toFixed(2),pct:tot?wpts/tot*100:0};
+}).sort((a,b)=>b.wpts-a.wpts);
 }
 
 function calcTeamLoad(alloc,team,weights={}){
@@ -358,7 +361,16 @@ function DashTab({report,teamLoad,projects,cont,team,history,colorMap,weights}){
   const done   =projects.filter(p=>p.status==="concluido").length;
   const chartProj=report.map(r=>({name:r.name.length>22?r.name.slice(0,20)+"…":r.name,pct:+r.pct.toFixed(1),pid:r.pid,wpts:r.wpts}));
   const chartTeam=teamLoad.filter(m=>m.active).sort((a,b)=>b.pct-a.pct);
-  const statusPie=[
+  async function exportPNG(){
+const el=document.getElementById("dashboard-content");
+if(!el)return;
+const canvas=await html2canvas(el,{backgroundColor:"#f9fafb",scale:2});
+const link=document.createElement("a");
+link.download=MM_Dashboard_${TODAY}.png;
+link.href=canvas.toDataURL("image/png");
+link.click();
+}
+const statusPie=[
     {name:"Ativos",value:active,fill:STATUS.ativo.hex},
     {name:"Bloqueados",value:blocked,fill:STATUS.bloqueado.hex},
     {name:"Aguardando",value:waiting,fill:STATUS.aguardando.hex},
@@ -366,7 +378,11 @@ function DashTab({report,teamLoad,projects,cont,team,history,colorMap,weights}){
   ].filter(d=>d.value>0);
   return(
     <div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"8px",marginBottom:"1.25rem"}}>
+  <div style={{display:"flex",justifyContent:"flex-end",marginBottom:"12px"}}>
+    <button onClick={exportPNG} style={{...B.sec,fontSize:"12px",padding:"6px 14px",display:"flex",alignItems:"center",gap:"5px"}}>↓ Exportar PNG</button>
+  </div>
+  <div id="dashboard-content">
+  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"8px",marginBottom:"1.25rem"}}>
         {[["Ativos",active,STATUS.ativo],["Bloqueados",blocked,STATUS.bloqueado],["Aguardando",waiting,STATUS.aguardando],["Concluídos",done,STATUS.concluido]].map(([l,v,s])=>(
           <div key={l} style={{...B.card,textAlign:"center",borderTop:`3px solid ${s.hex}`,padding:"12px 8px"}}>
             <div style={{fontSize:"9px",fontWeight:700,textTransform:"uppercase",letterSpacing:".07em",color:"#9ca3af",marginBottom:"6px"}}>{l}</div>
@@ -614,12 +630,17 @@ function ProjTab({projects,cont,saveProjects,saveCont,colorMap,diary,saveDiary,t
           <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px",paddingBottom:"8px",borderBottom:`2px solid ${RED}20`}}>
             <div style={{width:"6px",height:"6px",borderRadius:"50%",background:RED}}/>
             {editCont===ct.id?(
-              <input defaultValue={ct.name} autoFocus onBlur={e=>{saveCont(cont.map(c=>c.id===ct.id?{...c,name:e.target.value}:c));setEditCont(null);}} style={{...B.inp,fontSize:"14px",fontWeight:700,padding:"2px 6px",width:"auto",flex:1}} onKeyDown={e=>e.key==="Enter"&&e.target.blur()}/>
-            ):(
-              <span style={{fontSize:"14px",fontWeight:700,color:"#111",cursor:"text"}} onDoubleClick={()=>setEditCont(ct.id)}>{ct.name}</span>
-            )}
-            <span style={{fontSize:"11px",color:"#9ca3af"}}>{ps.length} proj.</span>
-            <span style={{fontSize:"9px",color:"#d1d5db",marginLeft:"auto"}}>duplo clique para editar</span>
+          <input defaultValue={ct.name} autoFocus onBlur={e=>{saveCont(cont.map(c=>c.id===ct.id?{...c,name:e.target.value}:c));setEditCont(null);}} style={{...B.inp,fontSize:"14px",fontWeight:700,padding:"2px 6px",width:"auto",flex:1}} onKeyDown={e=>e.key==="Enter"&&e.target.blur()}/>
+        ):(
+          <span style={{fontSize:"14px",fontWeight:700,color:"#111",cursor:"text"}} onDoubleClick={()=>setEditCont(ct.id)}>{ct.name}</span>
+        )}
+        <span style={{fontSize:"11px",color:"#9ca3af"}}>{ps.length} proj.</span>
+        <div style={{marginLeft:"auto",display:"flex",gap:"8px",alignItems:"center"}}>
+          <span style={{fontSize:"9px",color:"#d1d5db"}}>duplo clique para editar</span>
+          {ps.length===0&&(
+            <button onClick={()=>{if(window.confirm(`Apagar contratante "${ct.name}"?`))saveCont(cont.filter(c=>c.id!==ct.id));}} style={{...B.ghost,color:"#dc2626",fontSize:"11px",padding:"1px 6px",border:"1px solid #fecaca",borderRadius:"4px"}}>apagar</button>
+          )}
+        </div>
           </div>
           {ps.map(proj=><ProjCard key={proj.id} proj={proj} cont={cont} colorMap={colorMap} editProj={editProj} setEditProj={setEditProj} cycleStatus={cycleStatus} baixa={baixa} projects={projects} saveProjects={saveProjects} saveCont={saveCont} diaryCount={(diary[proj.id]||[]).length} onDetail={()=>setDetail(proj.id)}/>)}
         </div>
@@ -689,15 +710,16 @@ function ProjForm({cont,saveCont,initial,onSave,onCancel,onDelete}){
   const blank={cId:"",name:"",svcs:[],city:"",st:"",country:"Brasil",status:"ativo",note:""};
   const [f,setF]=useState(initial||blank);
   const [nc,setNc]=useState("");const [addC,setAddC]=useState(false);
-  function tSvc(s){setF(p=>({...p,svcs:p.svcs.includes(s)?p.svcs.filter(x=>x!==s):[...p.svcs,s]}));}
-  async function createCont(){if(!nc.trim())return;const c={id:"c"+uid(),name:nc.trim(),contact:""};await saveCont([...cont,c]);setF(p=>({...p,cId:c.id}));setNc("");setAddC(false);}
-  const Lbl=({t,children})=><div style={{marginBottom:"10px"}}><div style={{fontSize:"10px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".06em",marginBottom:"5px"}}>{t}</div>{children}</div>;
+const ncRef=useRef(null);
+function tSvc(s){setF(p=>({...p,svcs:p.svcs.includes(s)?p.svcs.filter(x=>x!==s):[...p.svcs,s]}));}
+async function createCont(){if(!nc.trim())return;const c={id:"c"+uid(),name:nc.trim(),contact:""};await saveCont([...cont,c]);setF(p=>({...p,cId:c.id}));setNc("");setAddC(false);}
+const Lbl=({t,children})=><div style={{marginBottom:"10px"}}><div style={{fontSize:"10px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".06em",marginBottom:"5px"}}>{t}</div>{children}</div>;
   return(
     <div style={{background:"#fff",borderRadius:"10px",padding:"18px",marginBottom:"1.25rem",border:`1px solid ${RED}30`,boxShadow:"0 2px 8px rgba(200,16,46,.08)"}}>
       <div style={{fontSize:"13px",fontWeight:700,color:"#111",marginBottom:"14px",paddingBottom:"10px",borderBottom:"1px solid #f0f0f0"}}>{initial?"Editar projeto":"Novo projeto"}</div>
       <Lbl t="Contratante *">
         {addC?(
-          <div style={{display:"flex",gap:"6px"}}><input autoFocus placeholder="Nome" value={nc} onChange={e=>setNc(e.target.value)} onKeyDown={e=>e.key==="Enter"&&createCont()} style={B.inp}/><button onClick={createCont} style={{...B.pri,padding:"7px 14px"}}>Criar</button><button onClick={()=>setAddC(false)} style={{...B.sec,padding:"7px 10px"}}>×</button></div>
+      <div style={{display:"flex",gap:"6px"}}><input ref={ncRef} placeholder="Nome" value={nc} onChange={e=>setNc(e.target.value)} onKeyDown={e=>e.key==="Enter"&&createCont()} style={B.inp}/><button onClick={createCont} style={{...B.pri,padding:"7px 14px"}}>Criar</button><button onClick={()=>setAddC(false)} style={{...B.sec,padding:"7px 10px"}}>×</button></div>
         ):(
           <div style={{display:"flex",gap:"6px"}}><select value={f.cId} onChange={e=>setF(p=>({...p,cId:e.target.value}))} style={{...B.inp,flex:1}}><option value="">Selecionar…</option>{cont.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select><button onClick={()=>setAddC(true)} style={{...B.sec,fontSize:"12px",padding:"7px 10px"}}>+ Novo</button></div>
         )}
@@ -709,12 +731,15 @@ function ProjForm({cont,saveCont,initial,onSave,onCancel,onDelete}){
         </div>
       </Lbl>
       <Lbl t="Localização">
-        <div style={{display:"grid",gridTemplateColumns:"1fr 70px 100px",gap:"6px"}}>
-          <input placeholder="Cidade" value={f.city} onChange={e=>setF(p=>({...p,city:e.target.value}))} style={B.inp}/>
-          <input placeholder="UF" value={f.st} onChange={e=>setF(p=>({...p,st:e.target.value}))} style={B.inp}/>
-          <input placeholder="País" value={f.country} onChange={e=>setF(p=>({...p,country:e.target.value}))} style={B.inp}/>
-        </div>
-      </Lbl>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 90px 100px",gap:"6px"}}>
+      <input placeholder="Cidade" value={f.city} onChange={e=>setF(p=>({...p,city:e.target.value}))} style={B.inp}/>
+      <select value={f.st} onChange={e=>setF(p=>({...p,st:e.target.value}))} style={B.inp}>
+        <option value="">UF</option>
+        {UFS.map(u=><option key={u} value={u}>{u}</option>)}
+      </select>
+      <input placeholder="País" value={f.country} onChange={e=>setF(p=>({...p,country:e.target.value}))} style={B.inp}/>
+    </div>
+  </Lbl>
       <Lbl t="Status">
         <div style={{display:"flex",gap:"6px",flexWrap:"wrap"}}>
           {["ativo","aguardando","bloqueado"].map(s=>{const sc=STATUS[s];const on=f.status===s;return(<button key={s} onClick={()=>setF(p=>({...p,status:s}))} style={{fontSize:"12px",padding:"5px 12px",borderRadius:"20px",border:`1px solid ${on?sc.hex:"#e5e7eb"}`,background:on?sc.bg:"transparent",color:on?sc.color:"#9ca3af",cursor:"pointer",fontWeight:on?600:400}}>{sc.label}</button>);})}</div>
