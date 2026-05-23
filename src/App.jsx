@@ -355,8 +355,6 @@ export default function App(){
     </div>
   );
 }
-  );
-}
 
 // ── Visão Geral ────────────────────────────────────────────────────────────────
 function DashTab({report,teamLoad,projects,cont,team,history,colorMap,weights}){
