@@ -374,7 +374,7 @@ export default function App(){
         {tab==="equipe"   && <EquipeTab team={team} saveTeam={saveTeam} weights={weights} saveWeights={saveWeights}/>}
         {tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap} saveHistory={function(h){setHistory(h);persist("history",h);}}/>}
       </div>
-      <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#d1d5db"}}>
+      <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>
         Criado por MAR Consultoria 2026 - v1.1
       </div>
     </div>
@@ -763,7 +763,7 @@ function ProjCard(props){
         <div style={{display:"flex",flexDirection:"column",gap:"5px",alignItems:"flex-end",flexShrink:0}}>
           {proj.status!=="concluido"&&(
             <button onClick={function(){cycleStatus(proj);}} style={{fontSize:"11px",fontWeight:600,padding:"3px 9px",borderRadius:"20px",background:sc.bg,color:sc.color,border:"none",cursor:"pointer",display:"inline-flex",alignItems:"center",gap:"4px"}}>
-              {sc.label} r
+              {sc.label} ↻
             </button>
           )}
           <div style={{display:"flex",gap:"4px",alignItems:"center"}}>
@@ -916,7 +916,7 @@ function ProjDetail(props){
             {(proj.city||proj.st)&&<div style={{fontSize:"12px",color:"#9ca3af",marginTop:"2px"}}>{[proj.city,proj.st,proj.country].filter(Boolean).join(", ")}</div>}
           </div>
           <button onClick={function(){saveProjects(projects.map(function(p){return p.id===proj.id?Object.assign({},p,{status:ST_CYC[p.status]||"ativo"}):p;}));}} style={{fontSize:"12px",fontWeight:600,padding:"4px 12px",borderRadius:"20px",background:sc.bg,color:sc.color,border:"none",cursor:"pointer",flexShrink:0}}>
-            {sc.label} r
+            {sc.label} ↻
           </button>
         </div>
         {proj.svcs&&proj.svcs.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:"3px",marginTop:"10px"}}>{proj.svcs.map(function(s){return <span key={s} style={{fontSize:"11px",padding:"3px 8px",borderRadius:"4px",background:"#f3f4f6",color:"#6b7280",border:"1px solid #e5e7eb"}}>{SERVICES_DISPLAY[s]||s}</span>;})}</div>}
