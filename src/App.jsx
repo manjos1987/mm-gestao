@@ -345,11 +345,16 @@ export default function App(){
         {tab==="relatorio"&& <RelTab report={report} date={date} setDate={setDate} projects={projects} cont={cont} normA={normA} team={team} weights={weights} assignedCnt={assignedCnt} colorMap={colorMap} genMsg={genMsg} aiLoad={aiLoad} aiMsg={aiMsg} exportExcel={()=>exportExcel(report,date,team,normA,projects,cont,weights)} exportPDF={()=>exportPDF(report,date,projects,cont,normA,team,weights)}/>}
         {tab==="projetos" && <ProjTab projects={projects} cont={cont} saveProjects={saveProjects} saveCont={saveCont} colorMap={colorMap} diary={diary} saveDiary={saveDiary} team={team} history={history}/>}
         {tab==="equipe"   && <EquipeTab team={team} saveTeam={saveTeam} weights={weights} saveWeights={saveWeights}/>}
-        {tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap}/>}
+        {{tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap} saveHistory={async(h)=>{setHistory(h);await persist("history",h);}}/>}
       </div>
 
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
+      <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#d1d5db"}}>
+        Criado por MAR Consultoria 2026 · v1.1
+      </div>
     </div>
+  );
+}
   );
 }
 
@@ -452,7 +457,8 @@ const statusPie=[
             </div>
           </div>
         </div>
-      )}
+      </div>
+      </div>
     </div>
   );
 }
@@ -910,10 +916,21 @@ function EquipeTab({team,saveTeam,weights,saveWeights}){
 }
 
 // ── Histórico ─────────────────────────────────────────────────────────────────
-function HistTab({history,projects,cont,team,colorMap}){
+function HistTab({history,projects,cont,team,colorMap,saveHistory}){
   const [sel,setSel]=useState(null);
+  const [expanded,setExpanded]=useState({});
+  const [notes,setNotes]=useState({});
   const dates=Object.keys(history).sort((a,b)=>b.localeCompare(a));
+
+  function toggleExpand(d){setExpanded(p=>({...p,[d]:!p[d]}));}
+
+  function saveNote(d){
+    const note=notes[d]??history[d]?.note??"";
+    saveHistory({...history,[d]:{...history[d],note}});
+  }
+
   if(!dates.length)return <div style={{textAlign:"center",padding:"3rem",color:"#9ca3af"}}>Nenhum histórico salvo ainda.</div>;
+
   if(sel){
     const rep=calcReport(history[sel]?.alloc||{},team,projects,{});
     return(
@@ -921,6 +938,20 @@ function HistTab({history,projects,cont,team,colorMap}){
         <button onClick={()=>setSel(null)} style={{...B.ghost,color:RED,padding:0,fontWeight:600,fontSize:"13px",marginBottom:"1rem"}}>← Voltar</button>
         <div style={{fontSize:"18px",fontWeight:700,color:"#111",marginBottom:"2px"}}>{fmtDate(sel)}</div>
         <div style={{fontSize:"13px",color:"#9ca3af",marginBottom:"1.25rem"}}>{cap(fmtDay(sel))}</div>
+        <div style={{...B.card,marginBottom:"1.25rem",borderLeft:`3px solid ${RED}`}}>
+          <div style={{fontSize:"11px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".06em",marginBottom:"8px"}}>Nota do dia</div>
+          <textarea
+            placeholder="Registre observações sobre este dia (máx. 500 caracteres)…"
+            maxLength={500}
+            value={notes[sel]??history[sel]?.note??""}
+            onChange={e=>setNotes(p=>({...p,[sel]:e.target.value}))}
+            style={{...B.inp,height:"72px",resize:"vertical",marginBottom:"6px"}}
+          />
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:"11px",color:"#d1d5db"}}>{(notes[sel]??history[sel]?.note??"").length}/500</span>
+            <button onClick={()=>saveNote(sel)} style={{...B.pri,fontSize:"12px",padding:"5px 14px"}}>Salvar nota</button>
+          </div>
+        </div>
         {rep.map(r=>{
           const p=projects.find(x=>x.id===r.pid);const c=cont.find(x=>x.id===p?.cId);
           return(
@@ -939,6 +970,7 @@ function HistTab({history,projects,cont,team,colorMap}){
       </div>
     );
   }
+
   return(
     <div>
       <div style={{fontSize:"13px",color:"#9ca3af",marginBottom:"1rem"}}>{dates.length} dia{dates.length!==1?"s":""} registrado{dates.length!==1?"s":""}</div>
@@ -946,15 +978,43 @@ function HistTab({history,projects,cont,team,colorMap}){
         const a=normAlloc(history[d]?.alloc||{});
         const pids=[...new Set(Object.values(a).flat().filter(Boolean))];
         const cnt=team.filter(m=>(a[m.id]||[]).length>0).length;
+        const isOpen=!!expanded[d];
+        const hasNote=!!(history[d]?.note);
         return(
-          <div key={d} onClick={()=>setSel(d)} style={{...B.card,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}}>
-            <div><div style={{fontSize:"14px",fontWeight:600,color:"#111"}}>{fmtDate(d)}</div><div style={{fontSize:"12px",color:"#9ca3af",marginTop:"1px"}}>{cap(fmtDay(d))}</div></div>
-            <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
-              <div style={{display:"flex",gap:"3px"}}>{pids.slice(0,7).map(pid=><div key={pid} style={{width:"8px",height:"8px",borderRadius:"50%",background:colorMap[pid]||"#888"}}/>)}</div>
-              <div style={{textAlign:"right",fontSize:"12px",color:"#9ca3af",lineHeight:1.6}}>
-                <div>{pids.length} proj.</div><div>{cnt} pessoas</div>
+          <div key={d} style={{...B.card,marginBottom:"6px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}} onClick={()=>toggleExpand(d)}>
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                  <div style={{fontSize:"14px",fontWeight:600,color:"#111"}}>{fmtDate(d)}</div>
+                  {hasNote&&<span style={{fontSize:"10px",padding:"1px 6px",borderRadius:"10px",background:"#fef3c7",color:"#d97706",fontWeight:600}}>nota</span>}
+                </div>
+                <div style={{fontSize:"12px",color:"#9ca3af",marginTop:"1px"}}>{cap(fmtDay(d))}</div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:"10px"}}>
+                <div style={{display:"flex",gap:"3px"}}>{pids.slice(0,7).map(pid=><div key={pid} style={{width:"8px",height:"8px",borderRadius:"50%",background:colorMap[pid]||"#888"}}/>)}</div>
+                <div style={{textAlign:"right",fontSize:"12px",color:"#9ca3af",lineHeight:1.6}}>
+                  <div>{pids.length} proj.</div><div>{cnt} pessoas</div>
+                </div>
+                <span style={{fontSize:"12px",color:"#9ca3af"}}>{isOpen?"▾":"▸"}</span>
               </div>
             </div>
+            {isOpen&&(
+              <div style={{marginTop:"12px",paddingTop:"12px",borderTop:"1px solid #f0f0f0"}}>
+                <div style={{fontSize:"11px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".06em",marginBottom:"8px"}}>Nota do dia</div>
+                <textarea
+                  placeholder="Registre observações sobre este dia (máx. 500 caracteres)…"
+                  maxLength={500}
+                  value={notes[d]??history[d]?.note??""}
+                  onChange={e=>setNotes(p=>({...p,[d]:e.target.value}))}
+                  style={{...B.inp,height:"64px",resize:"vertical",marginBottom:"6px"}}
+                />
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
+                  <span style={{fontSize:"11px",color:"#d1d5db"}}>{(notes[d]??history[d]?.note??"").length}/500</span>
+                  <button onClick={e=>{e.stopPropagation();saveNote(d);}} style={{...B.pri,fontSize:"12px",padding:"5px 14px"}}>Salvar nota</button>
+                </div>
+                <button onClick={()=>setSel(d)} style={{...B.sec,fontSize:"12px",width:"100%",textAlign:"center"}}>Ver relatório completo deste dia →</button>
+              </div>
+            )}
           </div>
         );
       })}
