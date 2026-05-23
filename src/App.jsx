@@ -403,9 +403,9 @@ const statusPie=[
           <div style={B.lbl}>Dedicação por projeto (ponderada)</div>
           <ResponsiveContainer width="100%" height={Math.max(160,chartProj.length*34)}>
             <BarChart data={chartProj} layout="vertical" margin={{top:0,right:48,left:8,bottom:0}}>
-              <XAxis type="number" domain={[0,100]} tickFormatter={v=>`${v}%`} tick={{fontSize:10}} axisLine={false} tickLine={false}/>
+              <XAxis type="number" domain={[0,100]} tickFormatter={v=>v+"%"} tick={{fontSize:10}} axisLine={false} tickLine={false}/>
               <YAxis type="category" dataKey="name" width={135} tick={{fontSize:11}} axisLine={false} tickLine={false}/>
-              <Tooltip formatter={(v,n,p)=>[`${v}% (${p.payload.wpts} pts)`,"Dedicação"]} contentStyle={{fontSize:12,borderRadius:6}}/>
+              <Tooltip formatter={(v,n,p)=>[v+"% ("+p.payload.wpts+" pts)","Dedicação"]} contentStyle={{fontSize:12,borderRadius:6}}/>
               <Bar dataKey="pct" radius={[0,4,4,0]} maxBarSize={18}>
                 {chartProj.map((e,i)=><Cell key={i} fill={colorMap[e.pid]||COLORS[i%COLORS.length]}/>)}
               </Bar>
