@@ -456,7 +456,6 @@ const statusPie=[
           </div>
         </div>
       </div>
-      </div>
     </div>
   );
 }
