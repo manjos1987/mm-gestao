@@ -387,7 +387,7 @@ const statusPie=[
   <div id="dashboard-content">
   <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"8px",marginBottom:"1.25rem"}}>
         {[["Ativos",active,STATUS.ativo],["Bloqueados",blocked,STATUS.bloqueado],["Aguardando",waiting,STATUS.aguardando],["Concluídos",done,STATUS.concluido]].map(([l,v,s])=>(
-          <div key={l} style={{...B.card,textAlign:"center",borderTop:borderTop:"3px solid "+s.hex,padding:"12px 8px"}}>
+          <div key={l} style={{...B.card,textAlign:"center",borderTop:"3px solid "+s.hex,,padding:"12px 8px"}}>
             <div style={{fontSize:"9px",fontWeight:700,textTransform:"uppercase",letterSpacing:".07em",color:"#9ca3af",marginBottom:"6px"}}>{l}</div>
             <div style={{fontSize:"26px",fontWeight:800,color:s.color}}>{v}</div>
           </div>
