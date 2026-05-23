@@ -369,7 +369,7 @@ const el=document.getElementById("dashboard-content");
 if(!el)return;
 const canvas=await html2canvas(el,{backgroundColor:"#f9fafb",scale:2});
 const link=document.createElement("a");
-link.download=MM_Dashboard_${TODAY}.png;
+link.download=`MM_Dashboard_${TODAY}.png`;
 link.href=canvas.toDataURL("image/png");
 link.click();
 }
