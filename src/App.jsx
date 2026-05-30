@@ -42,6 +42,10 @@ const STATUS = {
 };
 const ROLE_COLOR={Socio:"#111",Coordenador:"#7C3AED",Arquiteto:"#2563EB",Estagiario:"#059669",Parceiro:"#D97706"};
 const UFS=["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
+const SHIFTS={manha:"Manhã",tarde:"Tarde",integral:"Integral"};
+const SHIFT_COLORS={manha:"#2563EB",tarde:"#D97706",integral:"#7C3AED"};
+const SHIFT_BG={manha:"#eff6ff",tarde:"#fffbeb",integral:"#f5f3ff"};
+const MONTH_PT=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
 const INIT_C=[
   {id:"c1",name:"Canaa",contact:""},{id:"c2",name:"Santorini",contact:""},
@@ -208,6 +212,8 @@ export default function App(){
   var ls=useState(true); var loading=ls[0],setLoading=ls[1];
   var ss=useState(false); var syncing=ss[0],setSyncing=ss[1];
   var fs=useState(""); var flash=fs[0],setFlash=fs[1];
+  var pls=useState({}); var planning=pls[0],setPlanning=pls[1];
+  var sis=useState({}); var allocSubitems=sis[0],setAllocSubitems=sis[1];
   var ams=useState(""); var aiMsg=ams[0],setAiMsg=ams[1];
   var als2=useState(false); var aiLoad=als2[0],setAiLoad=als2[1];
   var os=useState(true); var online=os[0],setOnline=os[1];
@@ -230,19 +236,23 @@ export default function App(){
           setTeam(d.team||INIT_T);
           setWeights(d.weights||DW);
           setDiaryState(d.diary||{});
+          setPlanning(d.planning||{});
         }
       },function(err){console.error(err);setOnline(false);});
       var unsub2=onSnapshot(histRef,function(snap){
         var h=snap.exists()?snap.data():{};
         setHistory(h);
-        if(h[TODAY])setAlloc(normAlloc(h[TODAY].alloc||{}));
+        if(h[TODAY]){setAlloc(normAlloc(h[TODAY].alloc||{}));setAllocSubitems(h[TODAY].allocSubitems||{});}
         setLoading(false);
       },function(err){console.error(err);setLoading(false);});
       return function(){unsub1();unsub2();};
     }catch(err){console.error(err);setLoading(false);setOnline(false);}
   },[]);
 
-  useEffect(function(){setAlloc(normAlloc(history[date]?history[date].alloc||{}:{}));},[date]);
+  useEffect(function(){
+    setAlloc(normAlloc(history[date]?history[date].alloc||{}:{}));
+    setAllocSubitems(history[date]?history[date].allocSubitems||{}:{});
+  },[date]);
 
   var colorMap={};
   projects.forEach(function(p,i){colorMap[p.id]=COLORS[i%COLORS.length];});
@@ -272,7 +282,7 @@ export default function App(){
   }
 
   async function saveAlloc(){
-    var entry={alloc:normA,savedAt:new Date().toISOString()};
+    var entry={alloc:normA,allocSubitems:allocSubitems,savedAt:new Date().toISOString()};
     await persist("history",{[date]:entry});
     setFlash("Salvo!");setTimeout(function(){setFlash("");},1800);
   }
@@ -281,6 +291,7 @@ export default function App(){
   function saveTeam(t){setTeam(t);persist("team",t);}
   function saveWeights(w){setWeights(w);persist("weights",w);}
   function saveDiary(d){setDiaryState(d);persist("diary",d);}
+  function savePlanning(p){setPlanning(p);persist("planning",p);}
 
   async function genMsg(){
     if(!report.length)return;
@@ -332,8 +343,8 @@ export default function App(){
     );
   }
 
-  var TABS=[["visao","Visao Geral"],["hoje","Hoje"],["relatorio","Relatorio"],["projetos","Projetos"],["equipe","Equipe"],["historico","Historico"]];
-  var TABS_DISPLAY={"visao":"Visão Geral","hoje":"Hoje","relatorio":"Relatório","projetos":"Projetos","equipe":"Equipe","historico":"Histórico"};
+  var TABS=[["visao","Visao Geral"],["hoje","Hoje"],["relatorio","Relatorio"],["projetos","Projetos"],["equipe","Equipe"],["historico","Historico"],["planejamento","Planejamento"]];
+  var TABS_DISPLAY={"visao":"Visão Geral","hoje":"Hoje","relatorio":"Relatório","projetos":"Projetos","equipe":"Equipe","historico":"Histórico","planejamento":"Planejamento"};
 
   return (
     <div style={{background:"#f9fafb",minHeight:"100vh",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
@@ -368,14 +379,15 @@ export default function App(){
       </div>
       <div style={{padding:"1.25rem",maxWidth:"800px",margin:"0 auto"}}>
         {tab==="visao"    && <DashTab report={report} teamLoad={teamLoad} projects={projects} cont={cont} team={team} history={history} colorMap={colorMap} weights={weights}/>}
-        {tab==="hoje"     && <HojeTab team={team} projects={projects} cont={cont} normA={normA} colorMap={colorMap} toggleProj={toggleProj} date={date} setDate={setDate} savedDate={savedDate} assignedCnt={assignedCnt} saveAlloc={saveAlloc} flash={flash} report={report}/>}
+        {tab==="hoje"     && <HojeTab team={team} projects={projects} cont={cont} normA={normA} colorMap={colorMap} toggleProj={toggleProj} date={date} setDate={setDate} savedDate={savedDate} assignedCnt={assignedCnt} saveAlloc={saveAlloc} flash={flash} report={report} allocSubitems={allocSubitems} setAllocSubitems={setAllocSubitems}/>}
         {tab==="relatorio"&& <RelTab report={report} date={date} setDate={setDate} projects={projects} cont={cont} normA={normA} team={team} weights={weights} assignedCnt={assignedCnt} colorMap={colorMap} genMsg={genMsg} aiLoad={aiLoad} aiMsg={aiMsg} exportExcel={function(){exportExcel(report,date,team,normA,projects,cont,weights);}} exportPDF={function(){exportPDF(report,date,projects,cont,normA,team,weights);}}/>}
         {tab==="projetos" && <ProjTab projects={projects} cont={cont} saveProjects={saveProjects} saveCont={saveCont} colorMap={colorMap} diary={diary} saveDiary={saveDiary} team={team} history={history}/>}
         {tab==="equipe"   && <EquipeTab team={team} saveTeam={saveTeam} weights={weights} saveWeights={saveWeights}/>}
         {tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap} saveHistory={function(h){setHistory(h);persist("history",h);}}/>}
+        {tab==="planejamento"&& <PlanTab team={team} planning={planning} savePlanning={savePlanning}/>}
       </div>
       <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>
-        Criado por MAR Consultoria 2026 - v1.1
+        Criado por MAR Consultoria 2026 - v1.2
       </div>
     </div>
   );
@@ -497,7 +509,7 @@ function DashTab(props){
 }
 
 function HojeTab(props){
-  var team=props.team,projects=props.projects,cont=props.cont,normA=props.normA,colorMap=props.colorMap,toggleProj=props.toggleProj,date=props.date,setDate=props.setDate,savedDate=props.savedDate,assignedCnt=props.assignedCnt,saveAlloc=props.saveAlloc,flash=props.flash,report=props.report;
+  var team=props.team,projects=props.projects,cont=props.cont,normA=props.normA,colorMap=props.colorMap,toggleProj=props.toggleProj,date=props.date,setDate=props.setDate,savedDate=props.savedDate,assignedCnt=props.assignedCnt,saveAlloc=props.saveAlloc,flash=props.flash,report=props.report,allocSubitems=props.allocSubitems||{},setAllocSubitems=props.setAllocSubitems||function(){};
   return (
     <div>
       <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"1.25rem",flexWrap:"wrap"}}>
@@ -532,11 +544,29 @@ function HojeTab(props){
                           var proj=projects.find(function(p){return p.id===pid;});
                           var c=colorMap[pid];
                           var ctr=cont.find(function(x){return x.id===(proj?proj.cId:"");});
+                          var subitems=(proj&&proj.subitems)||[];
+                          var selSI=(allocSubitems[m.id]||{})[pid]||"";
                           return (
-                            <span key={pid} style={{fontSize:"11px",padding:"3px 7px 3px 9px",borderRadius:"20px",background:c+"18",color:c,border:"1px solid "+c+"35",display:"inline-flex",alignItems:"center",gap:"3px",lineHeight:1.5,fontWeight:500}}>
-                              {ctr?ctr.name+" - ":""}{proj?proj.name:pid}
-                              <button onClick={function(){toggleProj(m.id,pid);}} style={{background:"none",border:"none",cursor:"pointer",color:"inherit",padding:"0 1px",fontSize:"13px",opacity:.5}}>x</button>
-                            </span>
+                            <div key={pid} style={{display:"inline-flex",flexDirection:"column",gap:"2px"}}>
+                              <span style={{fontSize:"11px",padding:"3px 7px 3px 9px",borderRadius:"20px",background:c+"18",color:c,border:"1px solid "+c+"35",display:"inline-flex",alignItems:"center",gap:"3px",lineHeight:1.5,fontWeight:500}}>
+                                {ctr?ctr.name+" - ":""}{proj?proj.name:pid}
+                                <button onClick={function(){
+                                  toggleProj(m.id,pid);
+                                  var ns=Object.assign({},allocSubitems[m.id]||{});
+                                  delete ns[pid];
+                                  setAllocSubitems(Object.assign({},allocSubitems,{[m.id]:ns}));
+                                }} style={{background:"none",border:"none",cursor:"pointer",color:"inherit",padding:"0 1px",fontSize:"13px",opacity:.5}}>x</button>
+                              </span>
+                              {subitems.length>0&&(
+                                <select value={selSI} onChange={function(e){
+                                  var ns=Object.assign({},allocSubitems[m.id]||{},{[pid]:e.target.value});
+                                  setAllocSubitems(Object.assign({},allocSubitems,{[m.id]:ns}));
+                                }} style={{fontSize:"10px",padding:"2px 6px",borderRadius:"10px",border:"1px solid "+c+"35",background:c+"0d",color:c,cursor:"pointer",outline:"none"}}>
+                                  <option value="">Atividade...</option>
+                                  {subitems.map(function(si){return <option key={si.id} value={si.id}>{si.name}</option>;})}
+                                </select>
+                              )}
+                            </div>
                           );
                         })}
                       </div>
@@ -838,9 +868,16 @@ function ContratanteField(props){
 
 function ProjForm(props){
   var cont=props.cont,saveCont=props.saveCont,initial=props.initial,onSave=props.onSave,onCancel=props.onCancel,onDelete=props.onDelete;
-  var blank={cId:"",name:"",svcs:[],city:"",st:"",country:"Brasil",status:"ativo",note:""};
-  var fs=useState(initial||blank); var f=fs[0],setF=fs[1];
+  var blank={cId:"",name:"",svcs:[],subitems:[],city:"",st:"",country:"Brasil",status:"ativo",note:""};
+  var fs=useState(initial?Object.assign({subitems:[]},initial):blank); var f=fs[0],setF=fs[1];
+  var nsis=useState(""); var newSi=nsis[0],setNewSi=nsis[1];
   function tSvc(s){setF(function(p){return Object.assign({},p,{svcs:p.svcs.includes(s)?p.svcs.filter(function(x){return x!==s;}):[...p.svcs,s]});});}
+  function addSubitem(){
+    if(!newSi.trim())return;
+    setF(function(p){return Object.assign({},p,{subitems:[...(p.subitems||[]),{id:"si"+uid(),name:newSi.trim()}]});});
+    setNewSi("");
+  }
+  function delSubitem(id){setF(function(p){return Object.assign({},p,{subitems:(p.subitems||[]).filter(function(x){return x.id!==id;})});});}
 
   return (
     <div style={{background:"#fff",borderRadius:"10px",padding:"18px",marginBottom:"1.25rem",border:"1px solid "+RED+"30"}}>
@@ -855,6 +892,22 @@ function ProjForm(props){
             var on=f.svcs.includes(s);
             return <button key={s} onClick={function(){tSvc(s);}} style={{fontSize:"11px",padding:"4px 10px",borderRadius:"20px",border:"1px solid "+(on?RED:"#e5e7eb"),background:on?RED+"18":"transparent",color:on?RED:"#6b7280",cursor:"pointer",fontWeight:on?600:400}}>{SERVICES_DISPLAY[s]||s}</button>;
           })}
+        </div>
+      </Lbl>
+      <Lbl t="Atividades / Subitens">
+        <div>
+          {(f.subitems||[]).map(function(si){
+            return (
+              <div key={si.id} style={{display:"flex",gap:"6px",alignItems:"center",marginBottom:"4px"}}>
+                <span style={{flex:1,fontSize:"12px",padding:"5px 9px",borderRadius:"6px",background:"#f3f4f6",color:"#374151"}}>{si.name}</span>
+                <button onClick={function(){delSubitem(si.id);}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"15px",padding:"1px 6px"})}>×</button>
+              </div>
+            );
+          })}
+          <div style={{display:"flex",gap:"6px",marginTop:"4px"}}>
+            <input placeholder="Ex: Fundações, Estrutura, Detalhamento..." value={newSi} onChange={function(e){setNewSi(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();addSubitem();}}} style={B.inp}/>
+            <button onClick={addSubitem} style={Object.assign({},B.sec,{fontSize:"12px",padding:"6px 12px",flexShrink:0})}>+ Add</button>
+          </div>
         </div>
       </Lbl>
       <Lbl t="Localizacao">
@@ -963,6 +1016,20 @@ function ProjDetail(props){
   );
 }
 
+function MemberCard(props){
+  var m=props.m,rc=props.rc,delMember=props.delMember;
+  return (
+    <div style={Object.assign({},B.card,{display:"flex",alignItems:"center",gap:"12px",padding:"10px 14px"})}>
+      <div style={{width:"36px",height:"36px",borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px",fontWeight:700,background:rc+"15",color:rc,border:"1.5px solid "+rc+"30"}}>{m.name.slice(0,2).toUpperCase()}</div>
+      <div style={{flex:1}}>
+        <div style={{fontSize:"14px",fontWeight:600,color:"#111"}}>{m.name}</div>
+        <div style={{fontSize:"11px",color:"#9ca3af"}}>{ROLES_DISPLAY[m.role]||m.role}</div>
+      </div>
+      <button onClick={function(){if(window.confirm("Remover "+m.name+" da equipe?"))delMember(m.id);}} style={{background:"none",border:"1px solid #fecaca",borderRadius:"6px",cursor:"pointer",color:"#dc2626",fontSize:"12px",padding:"3px 9px",fontWeight:600}}>Remover</button>
+    </div>
+  );
+}
+
 function EquipeTab(props){
   var team=props.team,saveTeam=props.saveTeam,weights=props.weights,saveWeights=props.saveWeights;
   var sfs=useState(false); var showForm=sfs[0],setShowForm=sfs[1];
@@ -1041,17 +1108,212 @@ function EquipeTab(props){
               <span style={{fontSize:"11px",padding:"1px 7px",borderRadius:"10px",background:rc+"15",color:rc,fontWeight:700}}>peso {weights[role]!=null?weights[role]:(DW[role]||1)}</span>
             </div>
             {members.map(function(m){
-              return (
-                <div key={m.id} style={Object.assign({},B.card,{display:"flex",alignItems:"center",gap:"12px",padding:"10px 14px"})}>
-                  <div style={{width:"36px",height:"36px",borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px",fontWeight:700,background:rc+"15",color:rc,border:"1.5px solid "+rc+"30"}}>{m.name.slice(0,2).toUpperCase()}</div>
-                  <div style={{flex:1}}><div style={{fontSize:"14px",fontWeight:600,color:"#111"}}>{m.name}</div><div style={{fontSize:"11px",color:"#9ca3af"}}>{ROLES_DISPLAY[m.role]||m.role}</div></div>
-                  <button onClick={function(){delMember(m.id);}} style={Object.assign({},B.ghost,{fontSize:"18px",lineHeight:1,opacity:.35})}>x</button>
-                </div>
-              );
+              return <MemberCard key={m.id} m={m} rc={rc} weights={weights} delMember={delMember}/>;
             })}
           </div>
         );
       })}
+      {(function(){
+        var outros=team.filter(function(m){return !ROLES.includes(m.role);});
+        if(!outros.length)return null;
+        return (
+          <div style={{marginBottom:"1.5rem"}}>
+            <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"10px"}}>
+              <div style={{width:"3px",height:"16px",borderRadius:"2px",background:"#9ca3af"}}/>
+              <span style={{fontSize:"12px",fontWeight:700,textTransform:"uppercase",letterSpacing:".07em",color:"#374151"}}>Outros</span>
+              <span style={{fontSize:"11px",padding:"1px 7px",borderRadius:"10px",background:"#f3f4f6",color:"#9ca3af",fontWeight:700}}>{outros.length} cadastro{outros.length!==1?"s":""}</span>
+            </div>
+            {outros.map(function(m){return <MemberCard key={m.id} m={m} rc="#9ca3af" weights={weights} delMember={delMember}/>;}) }
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+function buildCalendar(monthStr){
+  var pts=monthStr.split('-');
+  var yr=parseInt(pts[0]),mo=parseInt(pts[1]);
+  var dim=new Date(yr,mo,0).getDate();
+  var weeks=[],week=null;
+  for(var d=1;d<=dim;d++){
+    var ds=pts[0]+'-'+pts[1]+'-'+String(d).padStart(2,'0');
+    var dow=new Date(ds+'T12:00:00').getDay();
+    if(dow===0||dow===6)continue;
+    var idx=dow-1;
+    if(week===null||idx===0){week=[null,null,null,null,null];weeks.push(week);}
+    week[idx]=ds;
+  }
+  return weeks;
+}
+
+function PlanTab(props){
+  var team=props.team,planning=props.planning,savePlanning=props.savePlanning;
+  var todayMonth=TODAY.slice(0,7);
+  var ms=useState(todayMonth); var month=ms[0],setMonth=ms[1];
+  var sds=useState(null); var selDate=sds[0],setSelDate=sds[1];
+  var smbs=useState(""); var selMemberId=smbs[0],setSelMemberId=smbs[1];
+  var nes=useState({}); var noteEdits=nes[0],setNoteEdits=nes[1];
+
+  var weeks=buildCalendar(month);
+  var mParts=month.split('-');
+  var monthLabel=MONTH_PT[parseInt(mParts[1])-1]+' '+mParts[0];
+
+  function prevMonth(){
+    var d=new Date(parseInt(mParts[0]),parseInt(mParts[1])-2,1);
+    setMonth(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
+    setSelDate(null);
+  }
+  function nextMonth(){
+    var d=new Date(parseInt(mParts[0]),parseInt(mParts[1]),1);
+    setMonth(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
+    setSelDate(null);
+  }
+
+  var dayEntries=selDate?(planning[selDate]||{}):{};
+
+  function setShift(memberId,shift){
+    var newDay=Object.assign({},planning[selDate]||{});
+    if(!shift){
+      delete newDay[memberId];
+    } else {
+      newDay[memberId]=Object.assign({},newDay[memberId]||{},{shift:shift});
+    }
+    var np=Object.assign({},planning,{[selDate]:newDay});
+    if(!Object.keys(newDay).length)delete np[selDate];
+    savePlanning(np);
+  }
+
+  function saveNote(memberId){
+    var key=selDate+'_'+memberId;
+    var val=noteEdits[key]!=null?noteEdits[key]:((planning[selDate]||{})[memberId]||{}).note||"";
+    var newDay=Object.assign({},planning[selDate]||{});
+    newDay[memberId]=Object.assign({},newDay[memberId]||{},{note:val});
+    savePlanning(Object.assign({},planning,{[selDate]:newDay}));
+  }
+
+  var memberPlanDays=[];
+  if(selMemberId){
+    Object.keys(planning).filter(function(d){return d.startsWith(month);}).sort().forEach(function(d){
+      var entry=(planning[d]||{})[selMemberId];
+      if(entry&&entry.shift)memberPlanDays.push({date:d,shift:entry.shift,note:entry.note||""});
+    });
+  }
+
+  var DAY_LABELS=["Seg","Ter","Qua","Qui","Sex"];
+
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",gap:"10px",marginBottom:"1.25rem"}}>
+        <button onClick={prevMonth} style={Object.assign({},B.sec,{padding:"6px 14px",fontSize:"16px"})}>‹</button>
+        <span style={{fontSize:"15px",fontWeight:700,color:"#111",flex:1,textAlign:"center"}}>{monthLabel}</span>
+        <button onClick={nextMonth} style={Object.assign({},B.sec,{padding:"6px 14px",fontSize:"16px"})}>›</button>
+      </div>
+
+      <div style={Object.assign({},B.card,{padding:"10px",marginBottom:"1rem",overflowX:"auto"})}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"4px",marginBottom:"6px",minWidth:"340px"}}>
+          {DAY_LABELS.map(function(l){
+            return <div key={l} style={{textAlign:"center",fontSize:"10px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".06em",padding:"4px"}}>{l}</div>;
+          })}
+        </div>
+        {weeks.map(function(week,wi){
+          return (
+            <div key={wi} style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:"4px",marginBottom:"4px",minWidth:"340px"}}>
+              {week.map(function(date,di){
+                if(!date)return <div key={di} style={{minHeight:"62px",background:"#f9fafb",borderRadius:"6px",border:"1px solid #f0f0f0"}}/>;
+                var isToday=date===TODAY;
+                var isSel=date===selDate;
+                var entries=planning[date]||{};
+                var assigned=Object.keys(entries).filter(function(mid){return entries[mid]&&entries[mid].shift;});
+                return (
+                  <div key={date} onClick={function(){setSelDate(isSel?null:date);}} style={{minHeight:"62px",background:isSel?"#fef2f2":isToday?"#fff7ed":"#fff",borderRadius:"6px",border:"1px solid "+(isSel?RED:isToday?"#fed7aa":"#e5e7eb"),cursor:"pointer",padding:"6px",boxSizing:"border-box"}}>
+                    <div style={{fontSize:"12px",fontWeight:isToday?700:500,color:isToday?RED:"#374151",marginBottom:"3px"}}>{parseInt(date.slice(-2))}</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:"2px"}}>
+                      {assigned.slice(0,3).map(function(mid){
+                        var m=team.find(function(x){return x.id===mid;});
+                        var sh=entries[mid].shift;
+                        var sc=SHIFT_COLORS[sh]||"#888";
+                        return <span key={mid} style={{fontSize:"8px",fontWeight:700,padding:"1px 3px",borderRadius:"3px",background:SHIFT_BG[sh]||"#f3f4f6",color:sc,border:"1px solid "+sc+"30",lineHeight:1.6}}>{m?m.name.split(' ')[0].slice(0,5):mid}</span>;
+                      })}
+                      {assigned.length>3&&<span style={{fontSize:"8px",color:"#9ca3af"}}>+{assigned.length-3}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+
+      {selDate&&(
+        <div style={Object.assign({},B.card,{marginBottom:"1rem",borderTop:"3px solid "+RED})}>
+          <div style={{fontSize:"13px",fontWeight:700,color:"#111",marginBottom:"12px",paddingBottom:"8px",borderBottom:"1px solid #f0f0f0"}}>
+            {fmtDate(selDate)} — {cap(fmtDay(selDate))}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:"6px"}}>
+            {team.map(function(m){
+              var entry=dayEntries[m.id]||{};
+              var hasShift=!!entry.shift;
+              var rc=ROLE_COLOR[m.role]||"#888";
+              var noteKey=selDate+'_'+m.id;
+              var noteVal=noteEdits[noteKey]!=null?noteEdits[noteKey]:(entry.note||"");
+              return (
+                <div key={m.id} style={{display:"flex",alignItems:"flex-start",gap:"8px",padding:"8px 10px",borderRadius:"8px",background:hasShift?"#fef2f2":"#f9fafb",border:"1px solid "+(hasShift?RED+"25":"#f0f0f0"),flexWrap:"wrap"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:"8px",flex:1,minWidth:"160px"}}>
+                    <div style={{width:"26px",height:"26px",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"10px",fontWeight:700,background:rc+"15",color:rc,flexShrink:0}}>{m.name.slice(0,2).toUpperCase()}</div>
+                    <span style={{fontSize:"13px",fontWeight:500,color:"#111"}}>{m.name}</span>
+                  </div>
+                  <div style={{display:"flex",gap:"4px",flexWrap:"wrap"}}>
+                    {Object.keys(SHIFTS).map(function(sh){
+                      var on=entry.shift===sh;
+                      var sc=SHIFT_COLORS[sh];
+                      return (
+                        <button key={sh} onClick={function(){setShift(m.id,on?null:sh);}} style={{fontSize:"11px",fontWeight:on?700:400,padding:"3px 9px",borderRadius:"12px",border:"1px solid "+(on?sc:"#e5e7eb"),background:on?SHIFT_BG[sh]:"transparent",color:on?sc:"#9ca3af",cursor:"pointer"}}>
+                          {SHIFTS[sh]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {hasShift&&(
+                    <div style={{display:"flex",gap:"4px",width:"100%",marginTop:"4px"}}>
+                      <input placeholder="Nota (motivo de alteração, falta...)" value={noteVal} onChange={function(e){var k=selDate+'_'+m.id;setNoteEdits(function(p){return Object.assign({},p,{[k]:e.target.value});});}} style={Object.assign({},B.inp,{fontSize:"11px",padding:"4px 8px",flex:1})}/>
+                      <button onClick={function(){saveNote(m.id);}} style={Object.assign({},B.sec,{fontSize:"11px",padding:"4px 10px",flexShrink:0})}>Salvar</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div style={B.card}>
+        <div style={B.lbl}>Resumo por colaborador — {monthLabel}</div>
+        <select value={selMemberId} onChange={function(e){setSelMemberId(e.target.value);}} style={Object.assign({},B.inp,{marginBottom:"12px"})}>
+          <option value="">Selecionar colaborador...</option>
+          {team.map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
+        </select>
+        {selMemberId&&(
+          memberPlanDays.length===0?(
+            <div style={{textAlign:"center",padding:"1.5rem",color:"#9ca3af",fontSize:"13px"}}>Sem planejamento para este mês.</div>
+          ):(
+            <div>
+              <div style={{fontSize:"12px",color:"#6b7280",marginBottom:"10px"}}>{memberPlanDays.length} dia{memberPlanDays.length!==1?"s":""} planejado{memberPlanDays.length!==1?"s":""}</div>
+              {memberPlanDays.map(function(item){
+                var sc=SHIFT_COLORS[item.shift]||"#888";
+                var sb=SHIFT_BG[item.shift]||"#f3f4f6";
+                return (
+                  <div key={item.date} style={{display:"flex",alignItems:"center",gap:"10px",padding:"7px 0",borderBottom:"1px solid #f0f0f0",flexWrap:"wrap"}}>
+                    <span style={{fontSize:"12px",fontWeight:600,color:"#374151",minWidth:"95px"}}>{fmtDate(item.date)}</span>
+                    <span style={{fontSize:"11px",padding:"2px 9px",borderRadius:"10px",background:sb,color:sc,fontWeight:600}}>{SHIFTS[item.shift]}</span>
+                    {item.note&&<span style={{fontSize:"11px",color:"#9ca3af",fontStyle:"italic"}}>{item.note}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+      </div>
     </div>
   );
 }
@@ -1077,9 +1339,9 @@ function HistTab(props){
         <div style={{fontSize:"13px",color:"#9ca3af",marginBottom:"1.25rem"}}>{cap(fmtDay(sel))}</div>
         <div style={Object.assign({},B.card,{marginBottom:"1.25rem",borderLeft:"3px solid "+RED})}>
           <div style={{fontSize:"11px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".06em",marginBottom:"8px"}}>Nota do dia</div>
-          <textarea placeholder="Registre observacoes sobre este dia (max. 500 caracteres)..." maxLength={500} value={notes[sel]!=null?notes[sel]:(history[sel]&&history[sel].note?history[sel].note:"")} onChange={function(e){setNotes(function(p){return Object.assign({},p,{[sel]:e.target.value});});}} style={Object.assign({},B.inp,{height:"72px",resize:"vertical",marginBottom:"6px"})}/>
+          <textarea placeholder="Registre observacoes sobre este dia (max. 500 caracteres)..." maxLength={1000} value={notes[sel]!=null?notes[sel]:(history[sel]&&history[sel].note?history[sel].note:"")} onChange={function(e){setNotes(function(p){return Object.assign({},p,{[sel]:e.target.value});});}} style={Object.assign({},B.inp,{height:"72px",resize:"vertical",marginBottom:"6px"})}/>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:"11px",color:"#d1d5db"}}>{(notes[sel]!=null?notes[sel]:(history[sel]&&history[sel].note?history[sel].note:"")).length}/500</span>
+            <span style={{fontSize:"11px",color:"#d1d5db"}}>{(notes[sel]!=null?notes[sel]:(history[sel]&&history[sel].note?history[sel].note:"")).length}/1000</span>
             <button onClick={function(){saveNote(sel);}} style={Object.assign({},B.pri,{fontSize:"12px",padding:"5px 14px"})}>Salvar nota</button>
           </div>
         </div>
@@ -1132,9 +1394,9 @@ function HistTab(props){
             {isOpen&&(
               <div style={{marginTop:"12px",paddingTop:"12px",borderTop:"1px solid #f0f0f0"}}>
                 <div style={{fontSize:"11px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".06em",marginBottom:"8px"}}>Nota do dia</div>
-                <textarea placeholder="Registre observacoes sobre este dia (max. 500 caracteres)..." maxLength={500} value={notes[d]!=null?notes[d]:(history[d]&&history[d].note?history[d].note:"")} onChange={function(e){var val=e.target.value;setNotes(function(p){return Object.assign({},p,{[d]:val});});}} style={Object.assign({},B.inp,{height:"64px",resize:"vertical",marginBottom:"6px"})}/>
+                <textarea placeholder="Registre observacoes sobre este dia (max. 500 caracteres)..." maxLength={1000} value={notes[d]!=null?notes[d]:(history[d]&&history[d].note?history[d].note:"")} onChange={function(e){var val=e.target.value;setNotes(function(p){return Object.assign({},p,{[d]:val});});}} style={Object.assign({},B.inp,{height:"64px",resize:"vertical",marginBottom:"6px"})}/>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"12px"}}>
-                  <span style={{fontSize:"11px",color:"#d1d5db"}}>{(notes[d]!=null?notes[d]:(history[d]&&history[d].note?history[d].note:"")).length}/500</span>
+                  <span style={{fontSize:"11px",color:"#d1d5db"}}>{(notes[d]!=null?notes[d]:(history[d]&&history[d].note?history[d].note:"")).length}/1000</span>
                   <button onClick={function(e){e.stopPropagation();saveNote(d);}} style={Object.assign({},B.pri,{fontSize:"12px",padding:"5px 14px"})}>Salvar nota</button>
                 </div>
                 <button onClick={function(){setSel(d);}} style={Object.assign({},B.sec,{fontSize:"12px",width:"100%",textAlign:"center"})}>Ver relatorio completo deste dia</button>
