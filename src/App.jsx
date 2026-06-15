@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import html2canvas from "html2canvas";
@@ -210,7 +210,7 @@ function LoginScreen(){
     if(!email.trim()||!pass)return;
     setLoad(true);setErr("");
     try{
-      var app=initializeApp(firebaseConfig);
+      var app=getApps().length?getApp():initializeApp(firebaseConfig);
       var auth=getAuth(app);
       await signInWithEmailAndPassword(auth,email.trim(),pass);
     }catch(ex){
@@ -284,7 +284,7 @@ export default function App(){
   useEffect(function(){
     if(firebaseConfig.apiKey==="COLE_AQUI"){setLoading(false);setAuthLoading(false);return;}
     try{
-      var app=initializeApp(firebaseConfig);
+      var app=getApps().length?getApp():initializeApp(firebaseConfig);
       var db=getFirestore(app);
       var auth=getAuth(app);
       dbRef.current=db;
@@ -387,8 +387,7 @@ export default function App(){
   }
 
   function handleLogout(){
-    var app=initializeApp(firebaseConfig);
-    var auth=getAuth(app);
+    var auth=getAuth();
     signOut(auth);
   }
 
