@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import html2canvas from "html2canvas";
 
 const firebaseConfig = {
@@ -198,6 +199,66 @@ var B={
   lbl:{fontSize:"10px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".08em",marginBottom:"10px"},
 };
 
+function LoginScreen(){
+  var es=useState(""); var email=es[0],setEmail=es[1];
+  var ps=useState(""); var pass=ps[0],setPass=ps[1];
+  var errs=useState(""); var err=errs[0],setErr=errs[1];
+  var lds=useState(false); var load=lds[0],setLoad=lds[1];
+
+  async function handleLogin(e){
+    e.preventDefault();
+    if(!email.trim()||!pass)return;
+    setLoad(true);setErr("");
+    try{
+      var app=initializeApp(firebaseConfig);
+      var auth=getAuth(app);
+      await signInWithEmailAndPassword(auth,email.trim(),pass);
+    }catch(ex){
+      var msgs={
+        "auth/invalid-credential":"E-mail ou senha incorretos.",
+        "auth/user-not-found":"E-mail não encontrado.",
+        "auth/wrong-password":"Senha incorreta.",
+        "auth/too-many-requests":"Muitas tentativas. Aguarde alguns minutos.",
+        "auth/invalid-email":"E-mail inválido.",
+      };
+      setErr(msgs[ex.code]||"Erro ao entrar. Tente novamente.");
+    }
+    setLoad(false);
+  }
+
+  return (
+    <div style={{minHeight:"100vh",background:"#f9fafb",display:"flex",alignItems:"center",justifyContent:"center",padding:"1.5rem"}}>
+      <div style={{background:"#fff",borderRadius:"16px",padding:"2.5rem",maxWidth:"380px",width:"100%",boxShadow:"0 4px 24px rgba(0,0,0,.07)",border:"1px solid #f0f0f0"}}>
+        <div style={{textAlign:"center",marginBottom:"2rem"}}>
+          <div style={{fontSize:"32px",fontWeight:800,letterSpacing:"-1px",color:"#111",marginBottom:"4px"}}>M<span style={{color:RED}}>+</span>M</div>
+          <div style={{fontSize:"11px",color:"#9ca3af",letterSpacing:".08em",textTransform:"uppercase",fontWeight:500}}>Arquitetura — Gestão</div>
+        </div>
+        <form onSubmit={handleLogin}>
+          <div style={{marginBottom:"12px"}}>
+            <div style={{fontSize:"11px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".07em",marginBottom:"6px"}}>E-mail</div>
+            <input type="email" value={email} onChange={function(e){setEmail(e.target.value);}} placeholder="seu@email.com" autoFocus style={Object.assign({},B.inp,{fontSize:"14px",padding:"10px 12px"})} required/>
+          </div>
+          <div style={{marginBottom:"20px"}}>
+            <div style={{fontSize:"11px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".07em",marginBottom:"6px"}}>Senha</div>
+            <input type="password" value={pass} onChange={function(e){setPass(e.target.value);}} placeholder="••••••••" style={Object.assign({},B.inp,{fontSize:"14px",padding:"10px 12px"})} required/>
+          </div>
+          {err&&(
+            <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:"8px",padding:"10px 12px",fontSize:"13px",color:"#dc2626",marginBottom:"14px"}}>
+              {err}
+            </div>
+          )}
+          <button type="submit" disabled={load} style={Object.assign({},B.pri,{width:"100%",padding:"11px",fontSize:"14px",opacity:load?.6:1})}>
+            {load?"Entrando...":"Entrar"}
+          </button>
+        </form>
+        <div style={{textAlign:"center",marginTop:"1.5rem",fontSize:"11px",color:"#d1d5db"}}>
+          Acesso restrito — M+M Arquitetura
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App(){
   var dbRef=useRef(null);
   var ts=useState("visao"); var tab=ts[0],setTab=ts[1];
@@ -209,6 +270,8 @@ export default function App(){
   var dts=useState(TODAY); var date=dts[0],setDate=dts[1];
   var als=useState({}); var alloc=als[0],setAlloc=als[1];
   var hs=useState({}); var history=hs[0],setHistory=hs[1];
+  var aus=useState(null); var authUser=aus[0],setAuthUser=aus[1];
+  var als3=useState(true); var authLoading=als3[0],setAuthLoading=als3[1];
   var ls=useState(true); var loading=ls[0],setLoading=ls[1];
   var ss=useState(false); var syncing=ss[0],setSyncing=ss[1];
   var fs=useState(""); var flash=fs[0],setFlash=fs[1];
@@ -219,11 +282,16 @@ export default function App(){
   var os=useState(true); var online=os[0],setOnline=os[1];
 
   useEffect(function(){
-    if(firebaseConfig.apiKey==="COLE_AQUI"){setLoading(false);return;}
+    if(firebaseConfig.apiKey==="COLE_AQUI"){setLoading(false);setAuthLoading(false);return;}
     try{
       var app=initializeApp(firebaseConfig);
       var db=getFirestore(app);
+      var auth=getAuth(app);
       dbRef.current=db;
+      var unsubAuth=onAuthStateChanged(auth,function(user){
+        setAuthUser(user);
+        setAuthLoading(false);
+      });
       var cfgRef=doc(db,"mm_app","config");
       var histRef=doc(db,"mm_app","history");
       var unsub1=onSnapshot(cfgRef,function(snap){
@@ -245,8 +313,8 @@ export default function App(){
         if(h[TODAY]){setAlloc(normAlloc(h[TODAY].alloc||{}));setAllocSubitems(h[TODAY].allocSubitems||{});}
         setLoading(false);
       },function(err){console.error(err);setLoading(false);});
-      return function(){unsub1();unsub2();};
-    }catch(err){console.error(err);setLoading(false);setOnline(false);}
+      return function(){unsubAuth();unsub1();unsub2();};
+    }catch(err){console.error(err);setLoading(false);setAuthLoading(false);setOnline(false);}
   },[]);
 
   useEffect(function(){
@@ -318,6 +386,27 @@ export default function App(){
     setAiLoad(false);
   }
 
+  function handleLogout(){
+    var app=initializeApp(firebaseConfig);
+    var auth=getAuth(app);
+    signOut(auth);
+  }
+
+  if(authLoading){
+    return (
+      <div style={{minHeight:"100vh",background:"#f9fafb",display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:"24px",fontWeight:800,marginBottom:"16px"}}>M<span style={{color:RED}}>+</span>M</div>
+          <div style={{fontSize:"13px",color:"#9ca3af"}}>Verificando acesso...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if(!authUser){
+    return <LoginScreen/>;
+  }
+
   if(!loading&&firebaseConfig.apiKey==="COLE_AQUI"){
     return (
       <div style={{minHeight:"100vh",background:"#f9fafb",display:"flex",alignItems:"center",justifyContent:"center",padding:"2rem"}}>
@@ -364,6 +453,12 @@ export default function App(){
               <span><b style={{color:"#111"}}>{projects.filter(function(p){return p.status!=="concluido";}).length}</b> projetos</span>
               <span><b style={{color:"#111"}}>{team.length}</b> pessoas</span>
             </div>
+            {authUser&&(
+              <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+                <span style={{fontSize:"11px",color:"#9ca3af",maxWidth:"120px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{authUser.email}</span>
+                <button onClick={handleLogout} style={{fontSize:"11px",padding:"3px 9px",borderRadius:"6px",border:"1px solid #e5e7eb",background:"transparent",color:"#6b7280",cursor:"pointer"}}>Sair</button>
+              </div>
+            )}
           </div>
         </div>
         <div style={{display:"flex",overflowX:"auto",marginTop:"4px"}}>
