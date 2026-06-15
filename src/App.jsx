@@ -288,32 +288,38 @@ export default function App(){
       var db=getFirestore(app);
       var auth=getAuth(app);
       dbRef.current=db;
+      var unsub1=null,unsub2=null;
       var unsubAuth=onAuthStateChanged(auth,function(user){
         setAuthUser(user);
         setAuthLoading(false);
+        // Cancela listeners anteriores se existirem
+        if(unsub1){unsub1();unsub1=null;}
+        if(unsub2){unsub2();unsub2=null;}
+        // Só abre conexão com o Firestore depois do login confirmado
+        if(!user){setLoading(false);return;}
+        var cfgRef=doc(db,"mm_app","config");
+        var histRef=doc(db,"mm_app","history");
+        unsub1=onSnapshot(cfgRef,function(snap){
+          if(!snap.exists()){
+            setDoc(cfgRef,{cont:INIT_C,projects:INIT_P,team:INIT_T,weights:DW,diary:{}});
+          } else {
+            var d=snap.data();
+            setCont(d.cont||INIT_C);
+            setProjects(d.projects||INIT_P);
+            setTeam(d.team||INIT_T);
+            setWeights(d.weights||DW);
+            setDiaryState(d.diary||{});
+            setPlanning(d.planning||{});
+          }
+        },function(err){console.error(err);setOnline(false);});
+        unsub2=onSnapshot(histRef,function(snap){
+          var h=snap.exists()?snap.data():{};
+          setHistory(h);
+          if(h[TODAY]){setAlloc(normAlloc(h[TODAY].alloc||{}));setAllocSubitems(h[TODAY].allocSubitems||{});}
+          setLoading(false);
+        },function(err){console.error(err);setLoading(false);});
       });
-      var cfgRef=doc(db,"mm_app","config");
-      var histRef=doc(db,"mm_app","history");
-      var unsub1=onSnapshot(cfgRef,function(snap){
-        if(!snap.exists()){
-          setDoc(cfgRef,{cont:INIT_C,projects:INIT_P,team:INIT_T,weights:DW,diary:{}});
-        } else {
-          var d=snap.data();
-          setCont(d.cont||INIT_C);
-          setProjects(d.projects||INIT_P);
-          setTeam(d.team||INIT_T);
-          setWeights(d.weights||DW);
-          setDiaryState(d.diary||{});
-          setPlanning(d.planning||{});
-        }
-      },function(err){console.error(err);setOnline(false);});
-      var unsub2=onSnapshot(histRef,function(snap){
-        var h=snap.exists()?snap.data():{};
-        setHistory(h);
-        if(h[TODAY]){setAlloc(normAlloc(h[TODAY].alloc||{}));setAllocSubitems(h[TODAY].allocSubitems||{});}
-        setLoading(false);
-      },function(err){console.error(err);setLoading(false);});
-      return function(){unsubAuth();unsub1();unsub2();};
+      return function(){unsubAuth();if(unsub1)unsub1();if(unsub2)unsub2();};
     }catch(err){console.error(err);setLoading(false);setAuthLoading(false);setOnline(false);}
   },[]);
 
