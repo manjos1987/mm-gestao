@@ -480,7 +480,7 @@ export default function App(){
       <div style={{padding:"1.25rem",maxWidth:"800px",margin:"0 auto"}}>
         {tab==="visao"    && <DashTab report={report} teamLoad={teamLoad} projects={projects} cont={cont} team={team} history={history} colorMap={colorMap} weights={weights}/>}
         {tab==="hoje"     && <HojeTab team={team} projects={projects} cont={cont} normA={normA} colorMap={colorMap} toggleProj={toggleProj} date={date} setDate={setDate} savedDate={savedDate} assignedCnt={assignedCnt} saveAlloc={saveAlloc} flash={flash} report={report} allocSubitems={allocSubitems} setAllocSubitems={setAllocSubitems}/>}
-        {tab==="relatorio"&& <RelTab report={report} date={date} setDate={setDate} projects={projects} cont={cont} normA={normA} team={team} weights={weights} assignedCnt={assignedCnt} colorMap={colorMap} genMsg={genMsg} aiLoad={aiLoad} aiMsg={aiMsg} exportExcel={function(){exportExcel(report,date,team,normA,projects,cont,weights);}} exportPDF={function(){exportPDF(report,date,projects,cont,normA,team,weights);}}/>}
+        {tab==="relatorio"&& <RelTab report={report} date={date} setDate={setDate} projects={projects} cont={cont} normA={normA} team={team} weights={weights} assignedCnt={assignedCnt} colorMap={colorMap} genMsg={genMsg} aiLoad={aiLoad} aiMsg={aiMsg} history={history} exportExcel={function(){exportExcel(report,date,team,normA,projects,cont,weights);}} exportPDF={function(){exportPDF(report,date,projects,cont,normA,team,weights);}}/>}
         {tab==="projetos" && <ProjTab projects={projects} cont={cont} saveProjects={saveProjects} saveCont={saveCont} colorMap={colorMap} diary={diary} saveDiary={saveDiary} team={team} history={history}/>}
         {tab==="equipe"   && <EquipeTab team={team} saveTeam={saveTeam} weights={weights} saveWeights={saveWeights}/>}
         {tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap} saveHistory={function(h){setHistory(h);persist("history",h);}}/>}
@@ -608,6 +608,12 @@ function DashTab(props){
   );
 }
 
+function getSIs(allocSubitems,mid,pid){
+  var val=(allocSubitems[mid]||{})[pid];
+  if(!val)return [];
+  return Array.isArray(val)?val:(val?[val]:[]);
+}
+
 function HojeTab(props){
   var team=props.team,projects=props.projects,cont=props.cont,normA=props.normA,colorMap=props.colorMap,toggleProj=props.toggleProj,date=props.date,setDate=props.setDate,savedDate=props.savedDate,assignedCnt=props.assignedCnt,saveAlloc=props.saveAlloc,flash=props.flash,report=props.report,allocSubitems=props.allocSubitems||{},setAllocSubitems=props.setAllocSubitems||function(){};
   return (
@@ -645,9 +651,9 @@ function HojeTab(props){
                           var c=colorMap[pid];
                           var ctr=cont.find(function(x){return x.id===(proj?proj.cId:"");});
                           var subitems=(proj&&proj.subitems)||[];
-                          var selSI=(allocSubitems[m.id]||{})[pid]||"";
+                          var selSIs=getSIs(allocSubitems,m.id,pid);
                           return (
-                            <div key={pid} style={{display:"inline-flex",flexDirection:"column",gap:"2px"}}>
+                            <div key={pid} style={{display:"inline-flex",flexDirection:"column",gap:"3px"}}>
                               <span style={{fontSize:"11px",padding:"3px 7px 3px 9px",borderRadius:"20px",background:c+"18",color:c,border:"1px solid "+c+"35",display:"inline-flex",alignItems:"center",gap:"3px",lineHeight:1.5,fontWeight:500}}>
                                 {ctr?ctr.name+" - ":""}{proj?proj.name:pid}
                                 <button onClick={function(){
@@ -658,13 +664,36 @@ function HojeTab(props){
                                 }} style={{background:"none",border:"none",cursor:"pointer",color:"inherit",padding:"0 1px",fontSize:"13px",opacity:.5}}>x</button>
                               </span>
                               {subitems.length>0&&(
-                                <select value={selSI} onChange={function(e){
-                                  var ns=Object.assign({},allocSubitems[m.id]||{},{[pid]:e.target.value});
-                                  setAllocSubitems(Object.assign({},allocSubitems,{[m.id]:ns}));
-                                }} style={{fontSize:"10px",padding:"2px 6px",borderRadius:"10px",border:"1px solid "+c+"35",background:c+"0d",color:c,cursor:"pointer",outline:"none"}}>
-                                  <option value="">Atividade...</option>
-                                  {subitems.map(function(si){return <option key={si.id} value={si.id}>{si.name}</option>;})}
-                                </select>
+                                <div style={{display:"flex",flexWrap:"wrap",gap:"3px",paddingLeft:"4px"}}>
+                                  {selSIs.map(function(siId){
+                                    var si=subitems.find(function(x){return x.id===siId;});
+                                    if(!si)return null;
+                                    return (
+                                      <span key={siId} style={{fontSize:"10px",padding:"2px 5px 2px 7px",borderRadius:"10px",background:c+"15",color:c,border:"1px solid "+c+"30",display:"inline-flex",alignItems:"center",gap:"2px",lineHeight:1.5}}>
+                                        {si.name}
+                                        <button onClick={function(){
+                                          var next=selSIs.filter(function(x){return x!==siId;});
+                                          var ns=Object.assign({},allocSubitems[m.id]||{},{[pid]:next});
+                                          setAllocSubitems(Object.assign({},allocSubitems,{[m.id]:ns}));
+                                        }} style={{background:"none",border:"none",cursor:"pointer",color:"inherit",padding:"0 1px",fontSize:"11px",opacity:.6,lineHeight:1}}>×</button>
+                                      </span>
+                                    );
+                                  })}
+                                  {selSIs.length<subitems.length&&(
+                                    <select value="" onChange={function(e){
+                                      if(!e.target.value)return;
+                                      var next=[...selSIs,e.target.value];
+                                      var ns=Object.assign({},allocSubitems[m.id]||{},{[pid]:next});
+                                      setAllocSubitems(Object.assign({},allocSubitems,{[m.id]:ns}));
+                                      e.target.value="";
+                                    }} style={{fontSize:"10px",padding:"2px 6px",borderRadius:"10px",border:"1px dashed "+c+"50",background:"transparent",color:c,cursor:"pointer",outline:"none"}}>
+                                      <option value="">+ atividade</option>
+                                      {subitems.filter(function(si){return !selSIs.includes(si.id);}).map(function(si){
+                                        return <option key={si.id} value={si.id}>{si.name}</option>;
+                                      })}
+                                    </select>
+                                  )}
+                                </div>
                               )}
                             </div>
                           );
@@ -717,17 +746,108 @@ function HojeTab(props){
   );
 }
 
+function getWeekDates(dateStr){
+  var d=new Date(dateStr+"T12:00:00");
+  var dow=d.getDay()||7;
+  var mon=new Date(d);mon.setDate(d.getDate()-(dow-1));
+  var dates=[];
+  for(var i=0;i<5;i++){var x=new Date(mon);x.setDate(mon.getDate()+i);dates.push(x.toISOString().split("T")[0]);}
+  return dates;
+}
+
+function calcAggReport(dates,history,team,projects,weights){
+  if(!weights)weights={};
+  var bp={};
+  dates.forEach(function(d){
+    var h=history[d];
+    if(!h||!h.alloc)return;
+    var normA=normAlloc(h.alloc);
+    team.forEach(function(m){
+      var pids=normA[m.id]||[];
+      if(!pids.length)return;
+      var w=wOf(m.role,weights);
+      pids.forEach(function(pid){
+        if(!bp[pid])bp[pid]={wpts:0,byMember:{}};
+        bp[pid].wpts+=w;
+        if(!bp[pid].byMember[m.id])bp[pid].byMember[m.id]={name:m.name,role:m.role,w:w,days:0};
+        bp[pid].byMember[m.id].days++;
+      });
+    });
+  });
+  var tot=Object.values(bp).reduce(function(s,v){return s+v.wpts;},0);
+  return Object.entries(bp).map(function(e){
+    var pid=e[0],val=e[1];
+    var p=projects.find(function(x){return x.id===pid;});
+    var members=Object.values(val.byMember);
+    return {
+      pid:pid,
+      name:p?p.name:pid,
+      people:members.map(function(x){return x.name;}),
+      detail:members.map(function(x){return {name:x.name,role:x.role,w:+(x.w.toFixed(2)),days:x.days};}),
+      wpts:+(val.wpts.toFixed(2)),
+      pct:tot?val.wpts/tot*100:0
+    };
+  }).sort(function(a,b){return b.wpts-a.wpts;});
+}
+
 function RelTab(props){
-  var report=props.report,date=props.date,setDate=props.setDate,projects=props.projects,cont=props.cont,normA=props.normA,team=props.team,weights=props.weights,assignedCnt=props.assignedCnt,colorMap=props.colorMap,genMsg=props.genMsg,aiLoad=props.aiLoad,aiMsg=props.aiMsg,exportExcel=props.exportExcel,exportPDF=props.exportPDF;
-  var totalPts=report.reduce(function(s,r){return s+r.wpts;},0);
+  var report=props.report,date=props.date,setDate=props.setDate,projects=props.projects,cont=props.cont,normA=props.normA,team=props.team,weights=props.weights,assignedCnt=props.assignedCnt,colorMap=props.colorMap,genMsg=props.genMsg,aiLoad=props.aiLoad,aiMsg=props.aiMsg,exportExcel=props.exportExcel,exportPDF=props.exportPDF,history=props.history||{};
+  var pts=useState("dia"); var period=pts[0],setPeriod=pts[1];
+
+  // Calcula datas do período e relatório agregado
+  var periodDates=[];
+  var periodLabel="";
+  if(period==="dia"){
+    periodDates=[date];
+    periodLabel=cap(fmtDay(date))+", "+fmtDate(date);
+  } else if(period==="semana"){
+    periodDates=getWeekDates(date);
+    periodLabel="Semana de "+fmtDate(periodDates[0])+" a "+fmtDate(periodDates[4]);
+  } else {
+    var ym=date.slice(0,7);
+    var parts2=ym.split("-");
+    periodDates=Object.keys(history).filter(function(d){return d.startsWith(ym);}).sort();
+    periodLabel=MONTH_PT[parseInt(parts2[1])-1]+" "+parts2[0];
+  }
+
+  var activeReport=period==="dia"?report:calcAggReport(periodDates,history,team,projects,weights);
+  var totalPts=activeReport.reduce(function(s,r){return s+r.wpts;},0);
+  var activePeople=period==="dia"?assignedCnt:[...new Set(activeReport.flatMap(function(r){return r.people;}))].length;
+  var diasComDados=period==="dia"?1:periodDates.filter(function(d){return history[d]&&history[d].alloc;}).length;
+
+  function shiftDate(delta){
+    var d=new Date(date+"T12:00:00");
+    if(period==="semana") d.setDate(d.getDate()+delta*7);
+    else if(period==="mes") d.setMonth(d.getMonth()+delta);
+    else d.setDate(d.getDate()+delta);
+    setDate(d.toISOString().split("T")[0]);
+  }
+
   return (
     <div>
-      <div style={{display:"flex",gap:"10px",alignItems:"center",marginBottom:"1.5rem"}}>
-        <input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={{fontSize:"13px",padding:"6px 10px",borderRadius:"6px",border:"1px solid #e5e7eb",background:"#fff",color:"#111"}}/>
-        <span style={{fontSize:"13px",color:"#6b7280"}}>{cap(fmtDay(date))}, {fmtDate(date)}</span>
+      {/* Seletor de período */}
+      <div style={{display:"flex",gap:"6px",marginBottom:"1rem",background:"#f3f4f6",borderRadius:"8px",padding:"3px",width:"fit-content"}}>
+        {[["dia","Diário"],["semana","Semanal"],["mes","Mensal"]].map(function(item){
+          return (
+            <button key={item[0]} onClick={function(){setPeriod(item[0]);}} style={{background:period===item[0]?"#fff":"transparent",border:"none",cursor:"pointer",padding:"5px 14px",borderRadius:"6px",fontSize:"12px",fontWeight:period===item[0]?700:400,color:period===item[0]?"#111":"#9ca3af"}}>
+              {item[1]}
+            </button>
+          );
+        })}
       </div>
+      {/* Navegação de data */}
+      <div style={{display:"flex",gap:"8px",alignItems:"center",marginBottom:"1.5rem",flexWrap:"wrap"}}>
+        <button onClick={function(){shiftDate(-1);}} style={Object.assign({},B.sec,{padding:"5px 12px"})}>‹</button>
+        {period==="dia"&&(
+          <input type="date" value={date} onChange={function(e){setDate(e.target.value);}} style={{fontSize:"13px",padding:"6px 10px",borderRadius:"6px",border:"1px solid #e5e7eb",background:"#fff",color:"#111"}}/>
+        )}
+        <span style={{fontSize:"13px",fontWeight:600,color:"#374151"}}>{periodLabel}</span>
+        <button onClick={function(){shiftDate(1);}} style={Object.assign({},B.sec,{padding:"5px 12px"})}>›</button>
+        {period!=="dia"&&<span style={{fontSize:"11px",color:"#9ca3af",marginLeft:"4px"}}>{diasComDados} dia{diasComDados!==1?"s":""} com registro</span>}
+      </div>
+      {/* Cards de resumo */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:"8px",marginBottom:"1.5rem"}}>
-        {[["Projetos",report.length],["Pessoas",assignedCnt],["Pts pond.",totalPts.toFixed(1)]].map(function(item){
+        {[["Projetos",activeReport.length],["Pessoas",activePeople],["Pts pond.",totalPts.toFixed(1)]].map(function(item){
           return (
             <div key={item[0]} style={{background:"#f9fafb",borderRadius:"8px",padding:"14px",textAlign:"center",border:"1px solid #f0f0f0"}}>
               <div style={{fontSize:"9px",fontWeight:700,textTransform:"uppercase",letterSpacing:".07em",color:"#9ca3af",marginBottom:"6px"}}>{item[0]}</div>
@@ -736,11 +856,11 @@ function RelTab(props){
           );
         })}
       </div>
-      {report.length===0?(
-        <div style={{textAlign:"center",padding:"3rem",color:"#9ca3af"}}>Nenhuma alocacao para esta data.</div>
+      {activeReport.length===0?(
+        <div style={{textAlign:"center",padding:"3rem",color:"#9ca3af"}}>Nenhuma alocação registrada neste período.</div>
       ):(
         <div>
-          {report.map(function(r){
+          {activeReport.map(function(r){
             var p=projects.find(function(x){return x.id===r.pid;});
             var c=cont.find(function(x){return x.id===(p?p.cId:"");});
             return (
@@ -755,7 +875,11 @@ function RelTab(props){
                 <div style={{height:"8px",background:"#f3f4f6",borderRadius:"4px",overflow:"hidden",marginBottom:"4px"}}>
                   <div style={{height:"100%",width:r.pct+"%",background:colorMap[r.pid],borderRadius:"4px"}}/>
                 </div>
-                <div style={{fontSize:"12px",color:"#9ca3af"}}>{r.detail.map(function(d){return d.name+" ("+d.role+", "+d.w+" pts)";}).join(" - ")}</div>
+                <div style={{fontSize:"12px",color:"#9ca3af"}}>
+                  {r.detail.map(function(d){
+                    return d.name+" ("+d.role+(d.days?" — "+d.days+"d":"")+", "+d.w+" pts)";
+                  }).join(" · ")}
+                </div>
               </div>
             );
           })}
