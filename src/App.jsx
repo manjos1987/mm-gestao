@@ -490,7 +490,7 @@ export default function App(){
         {tab==="planejamento"&& <PlanTab team={team} planning={planning} savePlanning={savePlanning}/>}
       </div>
       <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>
-        Criado por MAR Consultoria 2026 - v1.2
+        Criado por MAR Consultoria 2026 - v1.3
       </div>
     </div>
   );
