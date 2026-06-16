@@ -125,12 +125,13 @@ function calcTeamLoad(alloc,team,weights){
   });
 }
 
-function exportExcel(report,date,team,normA,projects,cont,weights){
+function exportExcel(report,date,team,normA,projects,cont,weights,periodLabel){
   var wb=XLSX.utils.book_new();
   var pesoStr=Object.entries(weights).map(function(e){return e[0]+"="+e[1];}).join(", ");
+  var dateLabel=periodLabel||(fmtDate(date)+", "+cap(fmtDay(date)));
   var s1=[
     ["M+M Arquitetura - Relatorio de Dedicacao"],
-    ["Data:",fmtDate(date),cap(fmtDay(date))],
+    ["Período:",dateLabel],
     [],
     ["Projeto","Contratante","Colaboradores","Pts Pond.","%"]
   ];
@@ -156,7 +157,7 @@ function exportExcel(report,date,team,normA,projects,cont,weights){
   XLSX.writeFile(wb,"MM_Relatorio_"+date+".xlsx");
 }
 
-function exportPDF(report,date,projects,cont,normA,team,weights){
+function exportPDF(report,date,projects,cont,normA,team,weights,periodLabel){
   var cidx={};
   projects.forEach(function(p,i){cidx[p.id]=i;});
   var projRows=report.map(function(r){
@@ -177,10 +178,12 @@ function exportPDF(report,date,projects,cont,normA,team,weights){
   var totalPts=report.reduce(function(s,r){return s+r.wpts;},0).toFixed(1);
   var peopleCnt=team.filter(function(m){return (normA[m.id]||[]).length>0;}).length;
   var pesoStr=Object.values(weights).join("/");
-  var html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>M+M '+fmtDate(date)+'</title>'
+  var dateLabel=periodLabel||fmtDate(date);
+  var dayLabel=periodLabel?'':cap(fmtDay(date));
+  var html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>M+M '+dateLabel+'</title>'
     +'<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Helvetica Neue,Arial,sans-serif;color:#111;-webkit-print-color-adjust:exact;print-color-adjust:exact}.page{padding:44px 48px;max-width:720px;margin:0 auto}.stripe{height:4px;background:#C8102E}.hdr{display:flex;justify-content:space-between;align-items:flex-end;padding:24px 0 16px;border-bottom:2px solid #111;margin-bottom:22px}.logo{font-size:28px;font-weight:800;letter-spacing:-1px}.plus{color:#C8102E}.sub{font-size:11px;color:#aaa;letter-spacing:.07em;text-transform:uppercase;margin-top:3px}.meta{text-align:right;font-size:12px;color:#888;line-height:1.7}.mdate{font-size:15px;font-weight:700;color:#111;display:block}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:22px}.stat{padding:12px;border:1px solid #f0f0f0;border-radius:6px;text-align:center}.sv{font-size:22px;font-weight:700}.sl{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#bbb;margin-top:3px}.sec{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#bbb;font-weight:700;margin-bottom:12px}.proj{margin-bottom:14px}.prow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}.pname{font-size:13px;font-weight:600}.pcli{font-size:10px;color:#aaa;margin-left:6px}.ppct{font-size:12px;color:#888;font-weight:600}.bar{height:7px;background:#f0f0f0;border-radius:4px;overflow:hidden;margin-bottom:3px}.fill{height:100%;border-radius:4px}.ppl{font-size:10px;color:#bbb}.div{border:none;border-top:1px solid #f0f0f0;margin:18px 0}.arow{display:flex;gap:10px;padding:5px 0;border-bottom:1px solid #f8f8f8;font-size:11px}.an{font-weight:600;min-width:80px;color:#555}.ar{color:#aaa;min-width:80px}.ap{color:#777}.foot{margin-top:22px;text-align:center;font-size:9px;color:#ddd;padding-top:10px;border-top:1px solid #f0f0f0}@media print{@page{margin:1cm}}</style>'
     +'</head><body><div class="stripe"></div><div class="page">'
-    +'<div class="hdr"><div><div class="logo">M<span class="plus">+</span>M</div><div class="sub">Arquitetura - Relatorio de Dedicacao</div></div><div class="meta"><span class="mdate">'+fmtDate(date)+'</span>'+cap(fmtDay(date))+'</div></div>'
+    +'<div class="hdr"><div><div class="logo">M<span class="plus">+</span>M</div><div class="sub">Arquitetura - Relatorio de Dedicacao</div></div><div class="meta"><span class="mdate">'+dateLabel+'</span>'+dayLabel+'</div></div>'
     +'<div class="stats"><div class="stat"><div class="sv">'+report.length+'</div><div class="sl">Projetos</div></div><div class="stat"><div class="sv">'+peopleCnt+'</div><div class="sl">Pessoas</div></div><div class="stat"><div class="sv">'+totalPts+'</div><div class="sl">Pts pond.</div></div><div class="stat"><div class="sv">'+pesoStr+'</div><div class="sl">Pesos</div></div></div>'
     +'<div class="sec">Dedicacao por projeto</div>'+projRows
     +'<div class="div"></div><div class="sec">Por colaborador</div>'+teamRows
@@ -480,7 +483,7 @@ export default function App(){
       <div style={{padding:"1.25rem",maxWidth:"800px",margin:"0 auto"}}>
         {tab==="visao"    && <DashTab report={report} teamLoad={teamLoad} projects={projects} cont={cont} team={team} history={history} colorMap={colorMap} weights={weights}/>}
         {tab==="hoje"     && <HojeTab team={team} projects={projects} cont={cont} normA={normA} colorMap={colorMap} toggleProj={toggleProj} date={date} setDate={setDate} savedDate={savedDate} assignedCnt={assignedCnt} saveAlloc={saveAlloc} flash={flash} report={report} allocSubitems={allocSubitems} setAllocSubitems={setAllocSubitems}/>}
-        {tab==="relatorio"&& <RelTab report={report} date={date} setDate={setDate} projects={projects} cont={cont} normA={normA} team={team} weights={weights} assignedCnt={assignedCnt} colorMap={colorMap} genMsg={genMsg} aiLoad={aiLoad} aiMsg={aiMsg} history={history} exportExcel={function(){exportExcel(report,date,team,normA,projects,cont,weights);}} exportPDF={function(){exportPDF(report,date,projects,cont,normA,team,weights);}}/>}
+        {tab==="relatorio"&& <RelTab report={report} date={date} setDate={setDate} projects={projects} cont={cont} normA={normA} team={team} weights={weights} assignedCnt={assignedCnt} colorMap={colorMap} genMsg={genMsg} aiLoad={aiLoad} aiMsg={aiMsg} history={history} exportExcel={exportExcel} exportPDF={exportPDF}/>}
         {tab==="projetos" && <ProjTab projects={projects} cont={cont} saveProjects={saveProjects} saveCont={saveCont} colorMap={colorMap} diary={diary} saveDiary={saveDiary} team={team} history={history}/>}
         {tab==="equipe"   && <EquipeTab team={team} saveTeam={saveTeam} weights={weights} saveWeights={saveWeights}/>}
         {tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap} saveHistory={function(h){setHistory(h);persist("history",h);}}/>}
@@ -886,8 +889,18 @@ function RelTab(props){
           <div style={{borderTop:"1px solid #f0f0f0",paddingTop:"1.25rem",marginTop:"0.5rem"}}>
             <div style={B.lbl}>Exportar</div>
             <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"10px"}}>
-              <button onClick={exportExcel} style={Object.assign({},B.pri,{display:"flex",alignItems:"center",gap:"5px"})}>Excel (.xlsx)</button>
-              <button onClick={exportPDF} style={Object.assign({},B.sec,{color:"#374151",fontWeight:500,display:"flex",alignItems:"center",gap:"5px"})}>PDF / Imprimir</button>
+              <button onClick={function(){
+                var expNormA=period==="dia"?normA:(function(){var r={};activeReport.forEach(function(ar){ar.detail.forEach(function(d){var m=team.find(function(x){return x.name===d.name;});if(m){if(!r[m.id])r[m.id]=[];if(r[m.id].indexOf(ar.pid)===-1)r[m.id].push(ar.pid);}});});return r;})();
+                var expLabel=period==="dia"?null:periodLabel;
+                var expDate=periodDates[0]||date;
+                exportExcel(activeReport,expDate,team,expNormA,projects,cont,weights,expLabel);
+              }} style={Object.assign({},B.pri,{display:"flex",alignItems:"center",gap:"5px"})}>Excel (.xlsx)</button>
+              <button onClick={function(){
+                var expNormA=period==="dia"?normA:(function(){var r={};activeReport.forEach(function(ar){ar.detail.forEach(function(d){var m=team.find(function(x){return x.name===d.name;});if(m){if(!r[m.id])r[m.id]=[];if(r[m.id].indexOf(ar.pid)===-1)r[m.id].push(ar.pid);}});});return r;})();
+                var expLabel=period==="dia"?null:periodLabel;
+                var expDate=periodDates[0]||date;
+                exportPDF(activeReport,expDate,projects,cont,expNormA,team,weights,expLabel);
+              }} style={Object.assign({},B.sec,{color:"#374151",fontWeight:500,display:"flex",alignItems:"center",gap:"5px"})}>PDF / Imprimir</button>
             </div>
             <button onClick={genMsg} disabled={aiLoad} style={Object.assign({},B.sec,{color:aiLoad?"#9ca3af":RED,width:"100%",textAlign:"center"})}>
               {aiLoad?"Gerando...":"Gerar mensagem para o Manoel"}
