@@ -335,6 +335,27 @@ export default function App(){
     setAllocSubitems(history[date]?history[date].allocSubitems||{}:{});
   },[date]);
 
+  useEffect(function(){
+    if(date!==TODAY)return;
+    setAlloc(function(prev){
+      var a=Object.assign({},prev);var ch=false;
+      tarefas.filter(function(t){return t.status!=="concluido";}).forEach(function(t){
+        if(!a[t.membroId])a[t.membroId]=[];
+        if(a[t.membroId].indexOf(t.projetoId)===-1){a[t.membroId]=[...a[t.membroId],t.projetoId];ch=true;}
+      });
+      return ch?a:prev;
+    });
+    setAllocSubitems(function(prev){
+      var sis=Object.assign({},prev);var ch=false;
+      tarefas.filter(function(t){return t.status!=="concluido"&&t.atividadeId;}).forEach(function(t){
+        if(!sis[t.membroId])sis[t.membroId]={};
+        var ps=(sis[t.membroId][t.projetoId]||[]);
+        if(ps.indexOf(t.atividadeId)===-1){sis[t.membroId][t.projetoId]=[...ps,t.atividadeId];ch=true;}
+      });
+      return ch?sis:prev;
+    });
+  },[tarefas]);
+
   var colorMap={};
   projects.forEach(function(p,i){colorMap[p.id]=COLORS[i%COLORS.length];});
   var normA=normAlloc(alloc);
@@ -1327,9 +1348,13 @@ function MemberCard(props){
           )}
         </div>
         {saveAcesso&&(
-          ADMIN_EMAILS.includes((m.email||"").toLowerCase())
-          ? <span style={{fontSize:"10px",padding:"3px 9px",borderRadius:"20px",background:RED+"15",color:RED,fontWeight:700,flexShrink:0}}>Admin ★</span>
-          : <button onClick={function(){saveAcesso(m.id,m.acesso==="admin"?"usuario":"admin");}} style={{fontSize:"11px",padding:"3px 10px",borderRadius:"20px",border:"1px solid "+(m.acesso==="admin"?RED:"#e5e7eb"),background:m.acesso==="admin"?RED+"12":"transparent",color:m.acesso==="admin"?RED:"#9ca3af",cursor:"pointer",flexShrink:0,fontWeight:m.acesso==="admin"?700:400}}>{m.acesso==="admin"?"Admin":"Usuário"}</button>
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:"2px",flexShrink:0}}>
+            <span style={{fontSize:"9px",color:"#9ca3af",textTransform:"uppercase",letterSpacing:".06em"}}>Acesso</span>
+            {ADMIN_EMAILS.includes((m.email||"").toLowerCase())
+              ? <span style={{fontSize:"11px",padding:"3px 10px",borderRadius:"20px",background:RED+"15",color:RED,fontWeight:700}}>Admin ★</span>
+              : <button onClick={function(){saveAcesso(m.id,m.acesso==="admin"?"usuario":"admin");}} style={{fontSize:"11px",padding:"3px 12px",borderRadius:"20px",border:"1px solid "+(m.acesso==="admin"?RED:"#e5e7eb"),background:m.acesso==="admin"?RED+"12":"transparent",color:m.acesso==="admin"?RED:"#9ca3af",cursor:"pointer",fontWeight:m.acesso==="admin"?700:400}}>{m.acesso==="admin"?"Admin":"Usuário"}</button>
+            }
+          </div>
         )}
         <button onClick={function(){if(window.confirm("Remover "+m.name+" da equipe?"))delMember(m.id);}} style={{background:"none",border:"1px solid #fecaca",borderRadius:"6px",cursor:"pointer",color:"#dc2626",fontSize:"12px",padding:"3px 9px",fontWeight:600,flexShrink:0}}>Remover</button>
       </div>
@@ -1660,8 +1685,11 @@ function TarefasTab(props){
   var tarefas=props.tarefas,saveTarefas=props.saveTarefas,team=props.team,projects=props.projects,authUser=props.authUser;
   var ps=useState(""); var pessoa=ps[0],setPessoa=ps[1];
   var prs=useState(""); var projeto=prs[0],setProjeto=prs[1];
+  var ats=useState(""); var atividade=ats[0],setAtividade=ats[1];
   var ds=useState(""); var desc=ds[0],setDesc=ds[1];
   var errs=useState(""); var err=errs[0],setErr=errs[1];
+  var projSel=projects.find(function(p){return p.id===projeto;});
+  var subitens=(projSel&&projSel.subitems)||[];
 
   function addTarefa(){
     if(!pessoa||!projeto||!desc.trim()){setErr("Preencha todos os campos.");return;}
@@ -1669,9 +1697,10 @@ function TarefasTab(props){
     var membro=team.find(function(m){return m.id===pessoa;});
     var proj=projects.find(function(p){return p.id===projeto;});
     var adminNome=ADMIN_NAMES[(authUser?authUser.email.toLowerCase():"")] || (authUser?authUser.email.split("@")[0]:"Admin");
-    var nova={id:uid(),membroId:pessoa,membroNome:membro?membro.name:"",projetoId:projeto,projetoNome:proj?proj.name:"",descricao:desc.trim(),status:"pendente",lida:false,criadoEm:new Date().toISOString(),atribuidoPor:adminNome,iniciadoEm:null,pausadoEm:null,concluidoEm:null};
+    var atNome=atividade?(subitens.find(function(s){return s.id===atividade;})||{}).name||"":"";
+    var nova={id:uid(),membroId:pessoa,membroNome:membro?membro.name:"",projetoId:projeto,projetoNome:proj?proj.name:"",atividadeId:atividade||null,atividadeNome:atNome,descricao:desc.trim(),status:"pendente",lida:false,criadoEm:new Date().toISOString(),atribuidoPor:adminNome,iniciadoEm:null,pausadoEm:null,concluidoEm:null};
     saveTarefas([...tarefas,nova]);
-    setPessoa("");setProjeto("");setDesc("");
+    setPessoa("");setProjeto("");setAtividade("");setDesc("");
   }
 
   var ativas=tarefas.filter(function(t){return t.status!=="concluido";});
@@ -1686,11 +1715,19 @@ function TarefasTab(props){
             <option value="">Colaborador...</option>
             {team.map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
           </select>
-          <select value={projeto} onChange={function(e){setProjeto(e.target.value);}} style={B.inp}>
+          <select value={projeto} onChange={function(e){setProjeto(e.target.value);setAtividade("");}} style={B.inp}>
             <option value="">Projeto...</option>
             {projects.filter(function(p){return p.status!=="concluido";}).map(function(p){return <option key={p.id} value={p.id}>{p.name}</option>;})}
           </select>
         </div>
+        {subitens.length>0&&(
+          <div style={{marginBottom:"8px"}}>
+            <select value={atividade} onChange={function(e){setAtividade(e.target.value);}} style={B.inp}>
+              <option value="">Atividade (opcional)...</option>
+              {subitens.map(function(si){return <option key={si.id} value={si.id}>{si.name}</option>;})}
+            </select>
+          </div>
+        )}
         <div style={{display:"flex",gap:"8px"}}>
           <input type="text" value={desc} onChange={function(e){setDesc(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")addTarefa();}} placeholder="Descrição da tarefa..." style={Object.assign({},B.inp,{flex:1})}/>
           <button onClick={addTarefa} style={B.pri}>Atribuir</button>
@@ -1707,7 +1744,7 @@ function TarefasTab(props){
           return (
             <div key={t.id} style={Object.assign({},B.card,{display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap"})}>
               <div style={{fontWeight:700,fontSize:"14px",color:"#111",minWidth:"80px",flexShrink:0}}>{t.membroNome}</div>
-              <div style={{fontSize:"13px",color:"#9ca3af",flexShrink:0,minWidth:"130px"}}>{t.projetoNome}</div>
+              <div style={{fontSize:"13px",color:"#9ca3af",flexShrink:0,minWidth:"130px"}}>{t.projetoNome}{t.atividadeNome?" · "+t.atividadeNome:""}</div>
               <div style={{fontSize:"13px",color:"#374151",flex:1,minWidth:"100px"}}>{t.descricao}</div>
               <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0}}>{st.label}</span>
               <button onClick={function(){if(window.confirm("Remover tarefa?"))saveTarefas(tarefas.filter(function(x){return x.id!==t.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",flexShrink:0,lineHeight:1})}>×</button>
@@ -1878,7 +1915,7 @@ function UsuarioApp(props){
                   <div key={t.id} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"12px"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:acts.length?"10px":"0"}}>
                       <div>
-                        <div style={{fontSize:"15px",fontWeight:700,color:"#111",marginBottom:"3px"}}>{t.projetoNome}</div>
+                        <div style={{fontSize:"15px",fontWeight:700,color:"#111",marginBottom:"3px"}}>{t.projetoNome}{t.atividadeNome?" — "+t.atividadeNome:""}</div>
                         <div style={{fontSize:"13px",color:"#9ca3af"}}>{t.descricao}</div>
                       </div>
                       <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0,marginLeft:"8px",whiteSpace:"nowrap"}}>{st.label}</span>
