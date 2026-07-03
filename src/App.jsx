@@ -445,8 +445,9 @@ export default function App(){
     );
   }
 
-  var isAdmin=!!(authUser&&ADMIN_EMAILS.includes(authUser.email.toLowerCase()));
-  var currentMember=!isAdmin?team.find(function(m){return m.email&&m.email.toLowerCase()===(authUser?authUser.email.toLowerCase():"");}) : null;
+  var memberByEmail=team.find(function(m){return m.email&&m.email.toLowerCase()===(authUser?authUser.email.toLowerCase():"");});
+  var isAdmin=!!(authUser&&(ADMIN_EMAILS.includes(authUser.email.toLowerCase())||(memberByEmail&&memberByEmail.acesso==="admin")));
+  var currentMember=!isAdmin?memberByEmail:null;
   if(!isAdmin){
     return <UsuarioApp authUser={authUser} handleLogout={handleLogout} tarefas={tarefas} currentMember={currentMember} saveTarefas={saveTarefas}/>;
   }
@@ -1266,7 +1267,7 @@ function ProjDetail(props){
 }
 
 function MemberCard(props){
-  var m=props.m,rc=props.rc,delMember=props.delMember,saveEmail=props.saveEmail;
+  var m=props.m,rc=props.rc,delMember=props.delMember,saveEmail=props.saveEmail,saveAcesso=props.saveAcesso;
   var ees=useState(false); var editE=ees[0],setEditE=ees[1];
   var evs=useState(m.email||""); var emailVal=evs[0],setEmailVal=evs[1];
   var cms=useState(false); var criarMode=cms[0],setCriarMode=cms[1];
@@ -1325,6 +1326,11 @@ function MemberCard(props){
             </div>
           )}
         </div>
+        {saveAcesso&&(
+          ADMIN_EMAILS.includes((m.email||"").toLowerCase())
+          ? <span style={{fontSize:"10px",padding:"3px 9px",borderRadius:"20px",background:RED+"15",color:RED,fontWeight:700,flexShrink:0}}>Admin ★</span>
+          : <button onClick={function(){saveAcesso(m.id,m.acesso==="admin"?"usuario":"admin");}} style={{fontSize:"11px",padding:"3px 10px",borderRadius:"20px",border:"1px solid "+(m.acesso==="admin"?RED:"#e5e7eb"),background:m.acesso==="admin"?RED+"12":"transparent",color:m.acesso==="admin"?RED:"#9ca3af",cursor:"pointer",flexShrink:0,fontWeight:m.acesso==="admin"?700:400}}>{m.acesso==="admin"?"Admin":"Usuário"}</button>
+        )}
         <button onClick={function(){if(window.confirm("Remover "+m.name+" da equipe?"))delMember(m.id);}} style={{background:"none",border:"1px solid #fecaca",borderRadius:"6px",cursor:"pointer",color:"#dc2626",fontSize:"12px",padding:"3px 9px",fontWeight:600,flexShrink:0}}>Remover</button>
       </div>
       {m.email&&!editE&&(
@@ -1363,6 +1369,7 @@ function EquipeTab(props){
   function addMember(){if(!name.trim())return;saveTeam([...team,{id:"m"+uid(),name:name.trim(),role:role,email:""}]);setName("");setRole("Arquiteto");setShowForm(false);}
   function delMember(id){saveTeam(team.filter(function(m){return m.id!==id;}));}
   function saveEmail(id,email){saveTeam(team.map(function(m){return m.id===id?Object.assign({},m,{email:email.trim().toLowerCase()}):m;}));}
+  function saveAcesso(id,acesso){saveTeam(team.map(function(m){return m.id===id?Object.assign({},m,{acesso:acesso}):m;}));}
   return (
     <div>
       <div style={Object.assign({},B.card,{marginBottom:"1.5rem",borderTop:"3px solid "+RED})}>
@@ -1432,7 +1439,7 @@ function EquipeTab(props){
               <span style={{fontSize:"11px",padding:"1px 7px",borderRadius:"10px",background:rc+"15",color:rc,fontWeight:700}}>peso {weights[role]!=null?weights[role]:(DW[role]||1)}</span>
             </div>
             {members.map(function(m){
-              return <MemberCard key={m.id} m={m} rc={rc} weights={weights} delMember={delMember} saveEmail={saveEmail}/>;
+              return <MemberCard key={m.id} m={m} rc={rc} weights={weights} delMember={delMember} saveEmail={saveEmail} saveAcesso={saveAcesso}/>;
             })}
           </div>
         );
