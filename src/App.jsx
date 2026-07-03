@@ -2317,6 +2317,7 @@ function HistTab(props){
   if(!dates.length)return <div style={{textAlign:"center",padding:"3rem",color:"#9ca3af"}}>Nenhum historico salvo ainda.</div>;
   if(sel){
     var rep=calcReport(history[sel]?history[sel].alloc||{}:{},team,projects,{});
+    var tarefasDia=sel===TODAY?tarefas.filter(function(t){return t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(TODAY));}):((history[sel]&&history[sel].tarefasSnap)||[]);
     return (
       <div>
         <button onClick={function(){setSel(null);}} style={Object.assign({},B.ghost,{color:RED,padding:0,fontWeight:600,fontSize:"13px",marginBottom:"1rem"})}>Voltar</button>
@@ -2346,10 +2347,10 @@ function HistTab(props){
             </div>
           );
         })}
-        {(function(){var td=sel===TODAY?tarefas.filter(function(t){return t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(TODAY));}):((history[sel]&&history[sel].tarefasSnap)||[]);return td.length>0&&(
+        {tarefasDia.length>0&&(
           <div style={{marginTop:"1.5rem",borderTop:"1px solid #f0f0f0",paddingTop:"1rem"}}>
             <div style={B.lbl}>Tarefas do dia</div>
-            {(sel===TODAY?tarefas.filter(function(t){return t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(TODAY));}):((history[sel]&&history[sel].tarefasSnap)||[])).map(function(t,i){
+            {tarefasDia.map(function(t,i){
               var st=TASK_ST[t.status]||TASK_ST.pendente;
               return (
                 <div key={t.id||i} style={Object.assign({},B.card,{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap",padding:"8px 12px"})}>
@@ -2360,7 +2361,7 @@ function HistTab(props){
               );
             })}
           </div>
-        );})()
+        )}
       </div>
     );
   }
