@@ -384,7 +384,8 @@ export default function App(){
   }
 
   async function saveAlloc(){
-    var entry={alloc:normA,allocSubitems:allocSubitems,savedAt:new Date().toISOString()};
+    var snap=tarefas.filter(function(t){return t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(date));}).map(function(t){return {id:t.id,membroNome:t.membroNome,projetoNome:t.projetoNome,atividadeNome:t.atividadeNome||"",descricao:t.descricao,status:t.status};});
+    var entry={alloc:normA,allocSubitems:allocSubitems,savedAt:new Date().toISOString(),tarefasSnap:snap};
     await persist("history",{[date]:entry});
     setFlash("Salvo!");setTimeout(function(){setFlash("");},1800);
   }
@@ -470,7 +471,7 @@ export default function App(){
   var isAdmin=!!(authUser&&(ADMIN_EMAILS.includes(authUser.email.toLowerCase())||(memberByEmail&&memberByEmail.acesso==="admin")));
   var currentMember=!isAdmin?memberByEmail:null;
   if(!isAdmin){
-    return <UsuarioApp authUser={authUser} handleLogout={handleLogout} tarefas={tarefas} currentMember={currentMember} saveTarefas={saveTarefas}/>;
+    return <UsuarioApp authUser={authUser} handleLogout={handleLogout} tarefas={tarefas} currentMember={currentMember} saveTarefas={saveTarefas} team={team}/>;
   }
 
   var TABS=[["visao","Visao Geral"],["hoje","Hoje"],["relatorio","Relatorio"],["projetos","Projetos"],["equipe","Equipe"],["historico","Historico"],["planejamento","Planejamento"],["tarefas","Tarefas"]];
@@ -1688,6 +1689,7 @@ function TarefasTab(props){
   var ats=useState(""); var atividade=ats[0],setAtividade=ats[1];
   var ds=useState(""); var desc=ds[0],setDesc=ds[1];
   var errs=useState(""); var err=errs[0],setErr=errs[1];
+  var dels=useState(null); var delegando=dels[0],setDelegando=dels[1];
   var projSel=projects.find(function(p){return p.id===projeto;});
   var subitens=(projSel&&projSel.subitems)||[];
 
@@ -1741,13 +1743,41 @@ function TarefasTab(props){
       ):(
         ativas.map(function(t){
           var st=TASK_ST[t.status]||TASK_ST.pendente;
+          var isDel=delegando&&delegando.taskId===t.id;
           return (
-            <div key={t.id} style={Object.assign({},B.card,{display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap"})}>
-              <div style={{fontWeight:700,fontSize:"14px",color:"#111",minWidth:"80px",flexShrink:0}}>{t.membroNome}</div>
-              <div style={{fontSize:"13px",color:"#9ca3af",flexShrink:0,minWidth:"130px"}}>{t.projetoNome}{t.atividadeNome?" · "+t.atividadeNome:""}</div>
-              <div style={{fontSize:"13px",color:"#374151",flex:1,minWidth:"100px"}}>{t.descricao}</div>
-              <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0}}>{st.label}</span>
-              <button onClick={function(){if(window.confirm("Remover tarefa?"))saveTarefas(tarefas.filter(function(x){return x.id!==t.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",flexShrink:0,lineHeight:1})}>×</button>
+            <div key={t.id} style={Object.assign({},B.card,{padding:"10px 14px"})}>
+              <div style={{display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap"}}>
+                <div style={{fontWeight:700,fontSize:"14px",color:"#111",minWidth:"80px",flexShrink:0}}>{t.membroNome}</div>
+                <div style={{fontSize:"13px",color:"#9ca3af",flexShrink:0,minWidth:"130px"}}>{t.projetoNome}{t.atividadeNome?" · "+t.atividadeNome:""}</div>
+                <div style={{fontSize:"13px",color:"#374151",flex:1,minWidth:"100px"}}>{t.descricao}</div>
+                <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0}}>{st.label}</span>
+                {isDel?(
+                  <div style={{display:"flex",gap:"5px",alignItems:"center",flexShrink:0}}>
+                    <select value={delegando.novoMembro} onChange={function(e){setDelegando({taskId:t.id,novoMembro:e.target.value});}} style={Object.assign({},B.inp,{fontSize:"11px",padding:"3px 8px",width:"130px"})}>
+                      <option value="">Para quem?</option>
+                      {team.filter(function(m){return m.id!==t.membroId;}).map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
+                    </select>
+                    <button onClick={function(){
+                      if(!delegando.novoMembro)return;
+                      var nm=team.find(function(m){return m.id===delegando.novoMembro;});
+                      saveTarefas(tarefas.map(function(x){
+                        if(x.id!==t.id)return x;
+                        return Object.assign({},x,{membroId:delegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString()}]});
+                      }));
+                      setDelegando(null);
+                    }} disabled={!delegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"11px",padding:"3px 10px"})}>✓</button>
+                    <button onClick={function(){setDelegando(null);}} style={Object.assign({},B.sec,{fontSize:"11px",padding:"3px 10px"})}>✕</button>
+                  </div>
+                ):(
+                  <button onClick={function(){setDelegando({taskId:t.id,novoMembro:"",});}} style={Object.assign({},B.ghost,{color:"#2563EB",fontSize:"12px",flexShrink:0,border:"1px solid #dbeafe",borderRadius:"6px",padding:"2px 8px"})}>Delegar</button>
+                )}
+                <button onClick={function(){if(window.confirm("Remover tarefa?"))saveTarefas(tarefas.filter(function(x){return x.id!==t.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",flexShrink:0,lineHeight:1})}>×</button>
+              </div>
+              {t.delegadoHistorico&&t.delegadoHistorico.length>0&&(
+                <div style={{marginTop:"6px",paddingTop:"6px",borderTop:"1px solid #f0f0f0",fontSize:"11px",color:"#9ca3af"}}>
+                  {t.delegadoHistorico.map(function(h,i){return <span key={i} style={{marginRight:"10px"}}>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</span>;})}
+                </div>
+              )}
             </div>
           );
         })
@@ -1777,9 +1807,10 @@ function TarefasTab(props){
 }
 
 function UsuarioApp(props){
-  var authUser=props.authUser,handleLogout=props.handleLogout,tarefas=props.tarefas,currentMember=props.currentMember,saveTarefas=props.saveTarefas;
+  var authUser=props.authUser,handleLogout=props.handleLogout,tarefas=props.tarefas,currentMember=props.currentMember,saveTarefas=props.saveTarefas,team=props.team||[];
   var ts=useState("minhas"); var tab=ts[0],setTab=ts[1];
   var sms=useState(false); var senhaMode=sms[0],setSenhaMode=sms[1];
+  var udels=useState(null); var uDelegando=udels[0],setUDelegando=udels[1];
   var sas=useState(""); var senhaAtual=sas[0],setSenhaAtual=sas[1];
   var sns=useState(""); var senhaNova=sns[0],setSenhaNova=sns[1];
   var scs=useState(""); var senhaConf=scs[0],setSenhaConf=scs[1];
@@ -1921,7 +1952,7 @@ function UsuarioApp(props){
                       <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0,marginLeft:"8px",whiteSpace:"nowrap"}}>{st.label}</span>
                     </div>
                     {acts.length>0&&(
-                      <div style={{display:"grid",gridTemplateColumns:"repeat("+acts.length+",1fr)",gap:"8px"}}>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat("+acts.length+",1fr)",gap:"8px",marginBottom:"6px"}}>
                         {acts.map(function(a){
                           return (
                             <button key={a.next} onClick={function(){changeStatus(t.id,a.next);}} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"8px",padding:"9px",fontSize:"13px",color:"#374151",cursor:"pointer",textAlign:"center",fontWeight:500}}>
@@ -1930,6 +1961,26 @@ function UsuarioApp(props){
                           );
                         })}
                       </div>
+                    )}
+                    {uDelegando&&uDelegando.taskId===t.id?(
+                      <div style={{display:"flex",gap:"6px",alignItems:"center",marginTop:"4px"}}>
+                        <select value={uDelegando.novoMembro} onChange={function(e){setUDelegando({taskId:t.id,novoMembro:e.target.value});}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px"})}>
+                          <option value="">Escolher colaborador...</option>
+                          {team.filter(function(m){return currentMember&&m.id!==currentMember.id;}).map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
+                        </select>
+                        <button onClick={function(){
+                          if(!uDelegando.novoMembro)return;
+                          var nm=team.find(function(m){return m.id===uDelegando.novoMembro;});
+                          saveTarefas(tarefas.map(function(x){
+                            if(x.id!==t.id)return x;
+                            return Object.assign({},x,{membroId:uDelegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString()}]});
+                          }));
+                          setUDelegando(null);
+                        }} disabled={!uDelegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"12px",padding:"6px 14px",flexShrink:0})}>Confirmar</button>
+                        <button onClick={function(){setUDelegando(null);}} style={Object.assign({},B.sec,{fontSize:"12px",padding:"6px 12px",flexShrink:0})}>Cancelar</button>
+                      </div>
+                    ):(
+                      <button onClick={function(){setUDelegando({taskId:t.id,novoMembro:"",});}} style={{background:"transparent",border:"1px solid #dbeafe",borderRadius:"8px",padding:"7px",fontSize:"12px",color:"#2563EB",cursor:"pointer",width:"100%",textAlign:"center",marginTop:"4px"}}>Delegar para outro colaborador</button>
                     )}
                   </div>
                 );
@@ -2015,6 +2066,21 @@ function HistTab(props){
             </div>
           );
         })}
+        {history[sel]&&history[sel].tarefasSnap&&history[sel].tarefasSnap.length>0&&(
+          <div style={{marginTop:"1.5rem",borderTop:"1px solid #f0f0f0",paddingTop:"1rem"}}>
+            <div style={B.lbl}>Tarefas do dia</div>
+            {history[sel].tarefasSnap.map(function(t,i){
+              var st=TASK_ST[t.status]||TASK_ST.pendente;
+              return (
+                <div key={t.id||i} style={Object.assign({},B.card,{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap",padding:"8px 12px"})}>
+                  <div style={{fontWeight:700,fontSize:"13px",color:"#111",minWidth:"80px",flexShrink:0}}>{t.membroNome}</div>
+                  <div style={{fontSize:"12px",color:"#9ca3af",flex:1}}>{t.projetoNome}{t.atividadeNome?" · "+t.atividadeNome:""}{t.descricao?" — "+t.descricao:""}</div>
+                  <span style={{fontSize:"10px",fontWeight:600,padding:"2px 8px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0}}>{st.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
