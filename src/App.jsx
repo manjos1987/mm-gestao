@@ -468,8 +468,13 @@ export default function App(){
   }
 
   var memberByEmail=team.find(function(m){return m.email&&m.email.toLowerCase()===(authUser?authUser.email.toLowerCase():"");});
-  var isAdmin=!!(authUser&&(ADMIN_EMAILS.includes(authUser.email.toLowerCase())||(memberByEmail&&memberByEmail.acesso==="admin")));
+  var memberAcesso=memberByEmail?memberByEmail.acesso||"usuario":"usuario";
+  var isAdmin=!!(authUser&&(ADMIN_EMAILS.includes(authUser.email.toLowerCase())||memberAcesso==="admin"));
+  var isGestor=!!(authUser&&!isAdmin&&memberAcesso==="gestor");
   var currentMember=!isAdmin?memberByEmail:null;
+  if(!isAdmin&&isGestor){
+    return <GestorApp authUser={authUser} handleLogout={handleLogout} tarefas={tarefas} saveTarefas={saveTarefas} currentMember={memberByEmail} team={team} projects={projects}/>;
+  }
   if(!isAdmin){
     return <UsuarioApp authUser={authUser} handleLogout={handleLogout} tarefas={tarefas} currentMember={currentMember} saveTarefas={saveTarefas} team={team}/>;
   }
@@ -520,7 +525,7 @@ export default function App(){
         {tab==="relatorio"&& <RelTab report={report} date={date} setDate={setDate} projects={projects} cont={cont} normA={normA} team={team} weights={weights} assignedCnt={assignedCnt} colorMap={colorMap} genMsg={genMsg} aiLoad={aiLoad} aiMsg={aiMsg} history={history} exportExcel={exportExcel} exportPDF={exportPDF}/>}
         {tab==="projetos" && <ProjTab projects={projects} cont={cont} saveProjects={saveProjects} saveCont={saveCont} colorMap={colorMap} diary={diary} saveDiary={saveDiary} team={team} history={history}/>}
         {tab==="equipe"   && <EquipeTab team={team} saveTeam={saveTeam} weights={weights} saveWeights={saveWeights}/>}
-        {tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap} saveHistory={function(h){setHistory(h);persist("history",h);}}/>}
+        {tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap} saveHistory={function(h){setHistory(h);persist("history",h);}} tarefas={tarefas}/>}
         {tab==="planejamento"&& <PlanTab team={team} planning={planning} savePlanning={savePlanning}/>}
         {tab==="tarefas"    && <TarefasTab tarefas={tarefas} saveTarefas={saveTarefas} team={team} projects={projects} authUser={authUser}/>}
       </div>
@@ -1353,7 +1358,11 @@ function MemberCard(props){
             <span style={{fontSize:"9px",color:"#9ca3af",textTransform:"uppercase",letterSpacing:".06em"}}>Acesso</span>
             {ADMIN_EMAILS.includes((m.email||"").toLowerCase())
               ? <span style={{fontSize:"11px",padding:"3px 10px",borderRadius:"20px",background:RED+"15",color:RED,fontWeight:700}}>Admin ★</span>
-              : <button onClick={function(){saveAcesso(m.id,m.acesso==="admin"?"usuario":"admin");}} style={{fontSize:"11px",padding:"3px 12px",borderRadius:"20px",border:"1px solid "+(m.acesso==="admin"?RED:"#e5e7eb"),background:m.acesso==="admin"?RED+"12":"transparent",color:m.acesso==="admin"?RED:"#9ca3af",cursor:"pointer",fontWeight:m.acesso==="admin"?700:400}}>{m.acesso==="admin"?"Admin":"Usuário"}</button>
+              : <select value={m.acesso||"usuario"} onChange={function(e){saveAcesso(m.id,e.target.value);}} style={{fontSize:"11px",padding:"3px 7px",borderRadius:"6px",border:"1px solid #e5e7eb",background:"#fff",color:m.acesso==="admin"?RED:m.acesso==="gestor"?"#2563EB":"#9ca3af",fontWeight:m.acesso&&m.acesso!=="usuario"?700:400,cursor:"pointer"}}>
+                  <option value="usuario">Usuário</option>
+                  <option value="gestor">Gestor</option>
+                  <option value="admin">Admin</option>
+                </select>
             }
           </div>
         )}
@@ -1700,7 +1709,7 @@ function TarefasTab(props){
     var proj=projects.find(function(p){return p.id===projeto;});
     var adminNome=ADMIN_NAMES[(authUser?authUser.email.toLowerCase():"")] || (authUser?authUser.email.split("@")[0]:"Admin");
     var atNome=atividade?(subitens.find(function(s){return s.id===atividade;})||{}).name||"":"";
-    var nova={id:uid(),membroId:pessoa,membroNome:membro?membro.name:"",projetoId:projeto,projetoNome:proj?proj.name:"",atividadeId:atividade||null,atividadeNome:atNome,descricao:desc.trim(),status:"pendente",lida:false,criadoEm:new Date().toISOString(),atribuidoPor:adminNome,iniciadoEm:null,pausadoEm:null,concluidoEm:null};
+    var nova={id:uid(),membroId:pessoa,membroNome:membro?membro.name:"",projetoId:projeto,projetoNome:proj?proj.name:"",atividadeId:atividade||null,atividadeNome:atNome,descricao:desc.trim(),status:"pendente",lida:false,criadoEm:new Date().toISOString(),atribuidoPor:adminNome,criadoPorEmail:authUser?authUser.email:"",iniciadoEm:null,pausadoEm:null,concluidoEm:null};
     saveTarefas([...tarefas,nova]);
     setPessoa("");setProjeto("");setAtividade("");setDesc("");
   }
@@ -2023,8 +2032,279 @@ function UsuarioApp(props){
   );
 }
 
+function GestorApp(props){
+  var authUser=props.authUser,handleLogout=props.handleLogout,tarefas=props.tarefas,saveTarefas=props.saveTarefas,currentMember=props.currentMember,team=props.team||[],projects=props.projects||[];
+  var ts=useState("atribuir"); var tab=ts[0],setTab=ts[1];
+  var sms=useState(false); var senhaMode=sms[0],setSenhaMode=sms[1];
+  var sas=useState(""); var senhaAtual=sas[0],setSenhaAtual=sas[1];
+  var sns=useState(""); var senhaNova=sns[0],setSenhaNova=sns[1];
+  var scs=useState(""); var senhaConf=scs[0],setSenhaConf=scs[1];
+  var sls=useState(false); var senhaLoad=sls[0],setSenhaLoad=sls[1];
+  var sss=useState(""); var senhaStatus=sss[0],setSenhaStatus=sss[1];
+  var ps=useState(""); var pessoa=ps[0],setPessoa=ps[1];
+  var prs=useState(""); var projeto=prs[0],setProjeto=prs[1];
+  var ats=useState(""); var atividade=ats[0],setAtividade=ats[1];
+  var ds=useState(""); var desc=ds[0],setDesc=ds[1];
+  var errs=useState(""); var err=errs[0],setErr=errs[1];
+  var dels=useState(null); var delegando=dels[0],setDelegando=dels[1];
+  var udels=useState(null); var uDelegando=udels[0],setUDelegando=udels[1];
+
+  var projSel=projects.find(function(p){return p.id===projeto;});
+  var subitens=(projSel&&projSel.subitems)||[];
+  var gestorNome=currentMember?currentMember.name:(authUser?authUser.email.split("@")[0]:"Gestor");
+  var gestorEmail=authUser?authUser.email:"";
+
+  async function handleAlterarSenha(){
+    if(!senhaAtual||!senhaNova||!senhaConf){setSenhaStatus("Preencha todos os campos.");return;}
+    if(senhaNova!==senhaConf){setSenhaStatus("As senhas não coincidem.");return;}
+    if(senhaNova.length<6){setSenhaStatus("Mínimo 6 caracteres.");return;}
+    setSenhaLoad(true);setSenhaStatus("");
+    try{
+      var app=getApps().length?getApp():initializeApp(firebaseConfig);
+      var auth=getAuth(app);
+      var cred=EmailAuthProvider.credential(authUser.email,senhaAtual);
+      await reauthenticateWithCredential(auth.currentUser,cred);
+      await updatePassword(auth.currentUser,senhaNova);
+      setSenhaStatus("ok");setSenhaAtual("");setSenhaNova("");setSenhaConf("");
+      setTimeout(function(){setSenhaMode(false);setSenhaStatus("");},2000);
+    }catch(ex){
+      var msgs={"auth/wrong-password":"Senha atual incorreta.","auth/invalid-credential":"Senha atual incorreta.","auth/weak-password":"Senha muito fraca."};
+      setSenhaStatus(msgs[ex.code]||"Erro ao alterar senha.");
+    }
+    setSenhaLoad(false);
+  }
+
+  function addTarefa(){
+    if(!pessoa||!projeto||!desc.trim()){setErr("Preencha todos os campos.");return;}
+    setErr("");
+    var membro=team.find(function(m){return m.id===pessoa;});
+    var proj=projects.find(function(p){return p.id===projeto;});
+    var atNome=atividade?(subitens.find(function(s){return s.id===atividade;})||{}).name||"":"";
+    var nova={id:uid(),membroId:pessoa,membroNome:membro?membro.name:"",projetoId:projeto,projetoNome:proj?proj.name:"",atividadeId:atividade||null,atividadeNome:atNome,descricao:desc.trim(),status:"pendente",lida:false,criadoEm:new Date().toISOString(),atribuidoPor:gestorNome,criadoPorEmail:gestorEmail,iniciadoEm:null,pausadoEm:null,concluidoEm:null};
+    saveTarefas([...tarefas,nova]);
+    setPessoa("");setProjeto("");setAtividade("");setDesc("");
+  }
+
+  function changeStatus(taskId,newStatus){
+    var now=new Date().toISOString();
+    saveTarefas(tarefas.map(function(t){
+      if(t.id!==taskId)return t;
+      return Object.assign({},t,{status:newStatus,iniciadoEm:newStatus==="em_andamento"&&!t.iniciadoEm?now:t.iniciadoEm,pausadoEm:newStatus==="pausado"?now:t.pausadoEm,concluidoEm:newStatus==="concluido"?now:t.concluidoEm});
+    }));
+  }
+  function getActions(status){
+    if(status==="pendente")    return [{label:"Iniciar",icon:"▷",next:"em_andamento"}];
+    if(status==="em_andamento")return [{label:"Pausar",icon:"⏸",next:"pausado"},{label:"Concluir",icon:"✓",next:"concluido"}];
+    if(status==="pausado")     return [{label:"Retomar",icon:"▷",next:"em_andamento"},{label:"Concluir",icon:"✓",next:"concluido"}];
+    return [];
+  }
+
+  var criadas=tarefas.filter(function(t){return t.criadoPorEmail===gestorEmail||(t.criadoPorEmail==null&&t.atribuidoPor===gestorNome);});
+  var criAtivas=criadas.filter(function(t){return t.status!=="concluido";});
+  var minhasTarefas=currentMember?tarefas.filter(function(t){return t.membroId===currentMember.id;}):[];
+  var mAtivas=minhasTarefas.filter(function(t){return t.status!=="concluido";});
+  var mConcluidas=minhasTarefas.filter(function(t){return t.status==="concluido";});
+  var naoLidas=mAtivas.filter(function(t){return !t.lida&&t.status==="pendente";});
+
+  function marcarLidas(){saveTarefas(tarefas.map(function(t){return(currentMember&&t.membroId===currentMember.id&&!t.lida)?Object.assign({},t,{lida:true}):t;}));}
+
+  return (
+    <div style={{background:"#f9fafb",minHeight:"100vh",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
+      <div style={{height:"3px",background:RED}}/>
+      <div style={{background:"#fff",borderBottom:"1px solid #f0f0f0",padding:"0 1.25rem",position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 3px rgba(0,0,0,.04)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0 0"}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:"10px"}}>
+            <span style={{fontSize:"22px",fontWeight:800,letterSpacing:"-1px",color:"#111"}}>M<span style={{color:RED}}>+</span>M</span>
+            <span style={{fontSize:"11px",color:"#9ca3af",letterSpacing:".05em",textTransform:"uppercase",fontWeight:500}}>Arquitetura</span>
+            <span style={{fontSize:"10px",padding:"2px 8px",borderRadius:"20px",background:"#dbeafe",color:"#2563EB",fontWeight:700}}>Gestor</span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+            <span style={{fontSize:"11px",color:"#9ca3af",maxWidth:"140px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{authUser.email}</span>
+            <button onClick={function(){setSenhaMode(function(v){return !v;});setSenhaStatus("");}} style={{fontSize:"11px",padding:"3px 9px",borderRadius:"6px",border:"1px solid #e5e7eb",background:"transparent",color:"#6b7280",cursor:"pointer"}}>Senha</button>
+            <button onClick={handleLogout} style={{fontSize:"11px",padding:"3px 9px",borderRadius:"6px",border:"1px solid #e5e7eb",background:"transparent",color:"#6b7280",cursor:"pointer"}}>Sair</button>
+          </div>
+        </div>
+        <div style={{display:"flex",marginTop:"4px"}}>
+          {[["atribuir","Tarefas"],["minhas","Minhas tarefas"]].map(function(t){
+            return <button key={t[0]} onClick={function(){setTab(t[0]);}} style={{background:"transparent",border:"none",cursor:"pointer",padding:"7px 12px",fontSize:"12px",fontWeight:tab===t[0]?700:400,color:tab===t[0]?"#111":"#9ca3af",borderBottom:tab===t[0]?"2.5px solid "+RED:"2.5px solid transparent",whiteSpace:"nowrap"}}>{t[1]}{t[0]==="minhas"&&naoLidas.length>0?" ("+naoLidas.length+")":""}</button>;
+          })}
+        </div>
+      </div>
+
+      <div style={{padding:"1.25rem",maxWidth:"700px",margin:"0 auto"}}>
+        {senhaMode&&(
+          <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"1.25rem"}}>
+            <div style={{fontSize:"14px",fontWeight:700,color:"#111",marginBottom:"12px"}}>Alterar senha</div>
+            <div style={{display:"flex",flexDirection:"column",gap:"8px",marginBottom:"12px"}}>
+              <input type="password" value={senhaAtual} onChange={function(e){setSenhaAtual(e.target.value);}} placeholder="Senha atual" style={B.inp}/>
+              <input type="password" value={senhaNova} onChange={function(e){setSenhaNova(e.target.value);}} placeholder="Nova senha (mín. 6 caracteres)" style={B.inp}/>
+              <input type="password" value={senhaConf} onChange={function(e){setSenhaConf(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")handleAlterarSenha();}} placeholder="Confirmar nova senha" style={B.inp}/>
+            </div>
+            {senhaStatus&&senhaStatus!=="ok"&&<div style={{fontSize:"12px",color:"#dc2626",marginBottom:"8px"}}>{senhaStatus}</div>}
+            {senhaStatus==="ok"&&<div style={{fontSize:"12px",color:"#15803d",marginBottom:"8px"}}>✓ Senha alterada!</div>}
+            <div style={{display:"flex",gap:"8px"}}>
+              <button onClick={handleAlterarSenha} disabled={senhaLoad} style={B.pri}>{senhaLoad?"Salvando...":"Salvar senha"}</button>
+              <button onClick={function(){setSenhaMode(false);setSenhaAtual("");setSenhaNova("");setSenhaConf("");setSenhaStatus("");}} style={B.sec}>Cancelar</button>
+            </div>
+          </div>
+        )}
+
+        {tab==="atribuir"&&(
+          <div>
+            <div style={B.lbl}>Atribuir nova tarefa</div>
+            <div style={Object.assign({},B.card,{marginBottom:"1.5rem"})}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"8px"}}>
+                <select value={pessoa} onChange={function(e){setPessoa(e.target.value);}} style={B.inp}>
+                  <option value="">Colaborador...</option>
+                  {currentMember&&<option value={currentMember.id}>Eu mesmo ({gestorNome})</option>}
+                  {team.filter(function(m){return !currentMember||m.id!==currentMember.id;}).map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
+                </select>
+                <select value={projeto} onChange={function(e){setProjeto(e.target.value);setAtividade("");}} style={B.inp}>
+                  <option value="">Projeto...</option>
+                  {projects.filter(function(p){return p.status!=="concluido";}).map(function(p){return <option key={p.id} value={p.id}>{p.name}</option>;})}
+                </select>
+              </div>
+              {subitens.length>0&&(
+                <div style={{marginBottom:"8px"}}>
+                  <select value={atividade} onChange={function(e){setAtividade(e.target.value);}} style={B.inp}>
+                    <option value="">Atividade (opcional)...</option>
+                    {subitens.map(function(si){return <option key={si.id} value={si.id}>{si.name}</option>;})}
+                  </select>
+                </div>
+              )}
+              <div style={{display:"flex",gap:"8px"}}>
+                <input type="text" value={desc} onChange={function(e){setDesc(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")addTarefa();}} placeholder="Descrição da tarefa..." style={Object.assign({},B.inp,{flex:1})}/>
+                <button onClick={addTarefa} style={B.pri}>Atribuir</button>
+              </div>
+              {err&&<div style={{fontSize:"12px",color:"#dc2626",marginTop:"6px"}}>{err}</div>}
+            </div>
+
+            <div style={B.lbl}>Tarefas que atribuí</div>
+            {criAtivas.length===0?(
+              <div style={{textAlign:"center",padding:"2rem",color:"#9ca3af",fontSize:"13px"}}>Nenhuma tarefa ativa atribuída por você.</div>
+            ):criAtivas.map(function(t){
+              var st=TASK_ST[t.status]||TASK_ST.pendente;
+              var isDel=delegando&&delegando.taskId===t.id;
+              return (
+                <div key={t.id} style={Object.assign({},B.card,{padding:"10px 14px"})}>
+                  <div style={{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap"}}>
+                    <div style={{fontWeight:700,fontSize:"13px",color:"#111",minWidth:"80px",flexShrink:0}}>{t.membroNome}</div>
+                    <div style={{fontSize:"12px",color:"#9ca3af",flex:1}}>{t.projetoNome}{t.atividadeNome?" · "+t.atividadeNome:""} — {t.descricao}</div>
+                    <span style={{fontSize:"11px",fontWeight:600,padding:"2px 9px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0}}>{st.label}</span>
+                    {isDel?(
+                      <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
+                        <select value={delegando.novoMembro} onChange={function(e){setDelegando({taskId:t.id,novoMembro:e.target.value});}} style={Object.assign({},B.inp,{fontSize:"11px",padding:"3px 7px",width:"130px"})}>
+                          <option value="">Para quem?</option>
+                          {team.filter(function(m){return m.id!==t.membroId;}).map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
+                        </select>
+                        <button onClick={function(){
+                          if(!delegando.novoMembro)return;
+                          var nm=team.find(function(m){return m.id===delegando.novoMembro;});
+                          saveTarefas(tarefas.map(function(x){if(x.id!==t.id)return x;return Object.assign({},x,{membroId:delegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString()}]});}));
+                          setDelegando(null);
+                        }} disabled={!delegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"11px",padding:"3px 9px"})}>✓</button>
+                        <button onClick={function(){setDelegando(null);}} style={Object.assign({},B.sec,{fontSize:"11px",padding:"3px 9px"})}>✕</button>
+                      </div>
+                    ):(
+                      <button onClick={function(){setDelegando({taskId:t.id,novoMembro:"",});}} style={Object.assign({},B.ghost,{color:"#2563EB",fontSize:"12px",border:"1px solid #dbeafe",borderRadius:"6px",padding:"2px 8px"})}>Delegar</button>
+                    )}
+                  </div>
+                  {t.delegadoHistorico&&t.delegadoHistorico.length>0&&(
+                    <div style={{marginTop:"5px",fontSize:"11px",color:"#9ca3af",borderTop:"1px solid #f0f0f0",paddingTop:"5px"}}>
+                      {t.delegadoHistorico.map(function(h,i){return <span key={i} style={{marginRight:"10px"}}>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</span>;})}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {tab==="minhas"&&(
+          <div>
+            {naoLidas.length>0&&(
+              <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"1.25rem"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px"}}>
+                  <span style={{fontSize:"16px"}}>🔔</span>
+                  <span style={{fontSize:"14px",fontWeight:700,color:"#111"}}>{naoLidas.length} nova{naoLidas.length!==1?"s":""} tarefa{naoLidas.length!==1?"s":""} atribuída{naoLidas.length!==1?"s":""} por {naoLidas[0].atribuidoPor}</span>
+                </div>
+                {naoLidas.map(function(t){return <div key={t.id} style={{fontSize:"13px",color:"#6b7280",paddingLeft:"24px",marginBottom:"4px"}}>{t.projetoNome} — {t.descricao}</div>;})}
+                <button onClick={marcarLidas} style={Object.assign({},B.sec,{fontSize:"12px",marginTop:"10px",width:"100%",textAlign:"center"})}>Entendido</button>
+              </div>
+            )}
+            {!currentMember&&(
+              <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:"12px",padding:"1.25rem",textAlign:"center",color:"#dc2626",fontSize:"13px",lineHeight:1.7}}>
+                Seu e-mail não está vinculado a nenhum membro da equipe.<br/>Peça ao administrador para configurar seu e-mail na aba Equipe.
+              </div>
+            )}
+            <div style={B.lbl}>Suas tarefas</div>
+            {mAtivas.length===0?(
+              <div style={{textAlign:"center",padding:"2.5rem",color:"#9ca3af",fontSize:"13px"}}>Nenhuma tarefa pendente.</div>
+            ):mAtivas.map(function(t){
+              var st=TASK_ST[t.status]||TASK_ST.pendente;
+              var acts=getActions(t.status);
+              return (
+                <div key={t.id} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"12px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:acts.length?"10px":"0"}}>
+                    <div>
+                      <div style={{fontSize:"15px",fontWeight:700,color:"#111",marginBottom:"3px"}}>{t.projetoNome}{t.atividadeNome?" — "+t.atividadeNome:""}</div>
+                      <div style={{fontSize:"13px",color:"#9ca3af"}}>{t.descricao}</div>
+                    </div>
+                    <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0,marginLeft:"8px"}}>{st.label}</span>
+                  </div>
+                  {acts.length>0&&(
+                    <div style={{display:"grid",gridTemplateColumns:"repeat("+acts.length+",1fr)",gap:"8px",marginBottom:"6px"}}>
+                      {acts.map(function(a){return <button key={a.next} onClick={function(){changeStatus(t.id,a.next);}} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"8px",padding:"9px",fontSize:"13px",color:"#374151",cursor:"pointer",textAlign:"center",fontWeight:500}}>{a.icon} {a.label}</button>;})}
+                    </div>
+                  )}
+                  {uDelegando&&uDelegando.taskId===t.id?(
+                    <div style={{display:"flex",gap:"6px",alignItems:"center",marginTop:"4px"}}>
+                      <select value={uDelegando.novoMembro} onChange={function(e){setUDelegando({taskId:t.id,novoMembro:e.target.value});}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px"})}>
+                        <option value="">Escolher colaborador...</option>
+                        {team.filter(function(m){return !currentMember||m.id!==currentMember.id;}).map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
+                      </select>
+                      <button onClick={function(){
+                        if(!uDelegando.novoMembro)return;
+                        var nm=team.find(function(m){return m.id===uDelegando.novoMembro;});
+                        saveTarefas(tarefas.map(function(x){if(x.id!==t.id)return x;return Object.assign({},x,{membroId:uDelegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString()}]});}));
+                        setUDelegando(null);
+                      }} disabled={!uDelegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"12px",padding:"6px 14px",flexShrink:0})}>Confirmar</button>
+                      <button onClick={function(){setUDelegando(null);}} style={Object.assign({},B.sec,{fontSize:"12px",padding:"6px 12px",flexShrink:0})}>Cancelar</button>
+                    </div>
+                  ):(
+                    <button onClick={function(){setUDelegando({taskId:t.id,novoMembro:"",});}} style={{background:"transparent",border:"1px solid #dbeafe",borderRadius:"8px",padding:"7px",fontSize:"12px",color:"#2563EB",cursor:"pointer",width:"100%",textAlign:"center",marginTop:"4px"}}>Delegar para outro colaborador</button>
+                  )}
+                </div>
+              );
+            })}
+            {mConcluidas.length>0&&(
+              <div style={{marginTop:"1.25rem",borderTop:"1px solid #f0f0f0",paddingTop:"1rem"}}>
+                <div style={Object.assign({},B.lbl,{cursor:"pointer"})} onClick={function(){var el=document.getElementById("g-conc");if(el)el.style.display=el.style.display==="none"?"block":"none";}}>Concluídas ({mConcluidas.length}) ▾</div>
+                <div id="g-conc" style={{display:"none"}}>
+                  {mConcluidas.map(function(t){return(
+                    <div key={t.id} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"8px",opacity:.6}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                        <div>
+                          <div style={{fontSize:"14px",fontWeight:700,color:"#111",marginBottom:"2px"}}>{t.projetoNome}</div>
+                          <div style={{fontSize:"13px",color:"#9ca3af"}}>{t.descricao}</div>
+                        </div>
+                        <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:"#f3f4f6",color:"#6b7280",marginLeft:"8px"}}>Concluído</span>
+                      </div>
+                    </div>
+                  );})}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>Criado por MAR Consultoria 2026 - v2.0</div>
+    </div>
+  );
+}
+
 function HistTab(props){
-  var history=props.history,projects=props.projects,cont=props.cont,team=props.team,colorMap=props.colorMap,saveHistory=props.saveHistory;
+  var history=props.history,projects=props.projects,cont=props.cont,team=props.team,colorMap=props.colorMap,saveHistory=props.saveHistory,tarefas=props.tarefas||[];
   var ss=useState(null); var sel=ss[0],setSel=ss[1];
   var es=useState({}); var expanded=es[0],setExpanded=es[1];
   var ns=useState({}); var notes=ns[0],setNotes=ns[1];
@@ -2066,10 +2346,10 @@ function HistTab(props){
             </div>
           );
         })}
-        {history[sel]&&history[sel].tarefasSnap&&history[sel].tarefasSnap.length>0&&(
+        {(function(){var td=sel===TODAY?tarefas.filter(function(t){return t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(TODAY));}):((history[sel]&&history[sel].tarefasSnap)||[]);return td.length>0&&(
           <div style={{marginTop:"1.5rem",borderTop:"1px solid #f0f0f0",paddingTop:"1rem"}}>
             <div style={B.lbl}>Tarefas do dia</div>
-            {history[sel].tarefasSnap.map(function(t,i){
+            {(sel===TODAY?tarefas.filter(function(t){return t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(TODAY));}):((history[sel]&&history[sel].tarefasSnap)||[])).map(function(t,i){
               var st=TASK_ST[t.status]||TASK_ST.pendente;
               return (
                 <div key={t.id||i} style={Object.assign({},B.card,{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap",padding:"8px 12px"})}>
@@ -2080,7 +2360,7 @@ function HistTab(props){
               );
             })}
           </div>
-        )}
+        );})()
       </div>
     );
   }
