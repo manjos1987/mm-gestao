@@ -19,6 +19,8 @@ const ANTHROPIC_KEY = "";
 const TODAY   = new Date().toISOString().split("T")[0];
 const DAYS_PT = ["domingo","segunda-feira","terca-feira","quarta-feira","quinta-feira","sexta-feira","sabado"];
 const RED     = "#C8102E";
+const ADMIN_EMAILS=["marcelloanjos.arq@gmail.com"];
+const ADMIN_NAMES={"marcelloanjos.arq@gmail.com":"Marcello"};
 const COLORS  = ["#C8102E","#2563EB","#059669","#D97706","#7C3AED","#0891B2","#B45309","#0D9488","#4F46E5","#065F46","#1D4ED8","#6D28D9","#BE185D","#92400E","#0E7490","#9D174D"];
 const ROLES   = ["Socio","Coordenador","Arquiteto","Estagiario","Parceiro"];
 const ROLES_DISPLAY = {"Socio":"Sócio","Coordenador":"Coordenador","Arquiteto":"Arquiteto","Estagiario":"Estagiário","Parceiro":"Parceiro"};
@@ -283,6 +285,7 @@ export default function App(){
   var ams=useState(""); var aiMsg=ams[0],setAiMsg=ams[1];
   var als2=useState(false); var aiLoad=als2[0],setAiLoad=als2[1];
   var os=useState(true); var online=os[0],setOnline=os[1];
+  var tfs=useState([]); var tarefas=tfs[0],setTarefas=tfs[1];
 
   useEffect(function(){
     if(firebaseConfig.apiKey==="COLE_AQUI"){setLoading(false);setAuthLoading(false);return;}
@@ -313,6 +316,7 @@ export default function App(){
             setWeights(d.weights||DW);
             setDiaryState(d.diary||{});
             setPlanning(d.planning||{});
+            setTarefas(d.tarefas||[]);
           }
         },function(err){console.error(err);setOnline(false);});
         unsub2=onSnapshot(histRef,function(snap){
@@ -369,6 +373,7 @@ export default function App(){
   function saveWeights(w){setWeights(w);persist("weights",w);}
   function saveDiary(d){setDiaryState(d);persist("diary",d);}
   function savePlanning(p){setPlanning(p);persist("planning",p);}
+  function saveTarefas(t){setTarefas(t);persist("tarefas",t);}
 
   async function genMsg(){
     if(!report.length)return;
@@ -440,8 +445,14 @@ export default function App(){
     );
   }
 
-  var TABS=[["visao","Visao Geral"],["hoje","Hoje"],["relatorio","Relatorio"],["projetos","Projetos"],["equipe","Equipe"],["historico","Historico"],["planejamento","Planejamento"]];
-  var TABS_DISPLAY={"visao":"Visão Geral","hoje":"Hoje","relatorio":"Relatório","projetos":"Projetos","equipe":"Equipe","historico":"Histórico","planejamento":"Planejamento"};
+  var isAdmin=!!(authUser&&ADMIN_EMAILS.includes(authUser.email.toLowerCase()));
+  var currentMember=!isAdmin?team.find(function(m){return m.email&&m.email.toLowerCase()===(authUser?authUser.email.toLowerCase():"");}) : null;
+  if(!isAdmin){
+    return <UsuarioApp authUser={authUser} handleLogout={handleLogout} tarefas={tarefas} currentMember={currentMember} saveTarefas={saveTarefas}/>;
+  }
+
+  var TABS=[["visao","Visao Geral"],["hoje","Hoje"],["relatorio","Relatorio"],["projetos","Projetos"],["equipe","Equipe"],["historico","Historico"],["planejamento","Planejamento"],["tarefas","Tarefas"]];
+  var TABS_DISPLAY={"visao":"Visão Geral","hoje":"Hoje","relatorio":"Relatório","projetos":"Projetos","equipe":"Equipe","historico":"Histórico","planejamento":"Planejamento","tarefas":"Tarefas"};
 
   return (
     <div style={{background:"#f9fafb",minHeight:"100vh",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
@@ -488,9 +499,10 @@ export default function App(){
         {tab==="equipe"   && <EquipeTab team={team} saveTeam={saveTeam} weights={weights} saveWeights={saveWeights}/>}
         {tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap} saveHistory={function(h){setHistory(h);persist("history",h);}}/>}
         {tab==="planejamento"&& <PlanTab team={team} planning={planning} savePlanning={savePlanning}/>}
+        {tab==="tarefas"    && <TarefasTab tarefas={tarefas} saveTarefas={saveTarefas} team={team} projects={projects} authUser={authUser}/>}
       </div>
       <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>
-        Criado por MAR Consultoria 2026 - v1.3
+        Criado por MAR Consultoria 2026 - v2.0
       </div>
     </div>
   );
@@ -1254,13 +1266,26 @@ function ProjDetail(props){
 }
 
 function MemberCard(props){
-  var m=props.m,rc=props.rc,delMember=props.delMember;
+  var m=props.m,rc=props.rc,delMember=props.delMember,saveEmail=props.saveEmail;
+  var ees=useState(false); var editE=ees[0],setEditE=ees[1];
+  var evs=useState(m.email||""); var emailVal=evs[0],setEmailVal=evs[1];
   return (
     <div style={Object.assign({},B.card,{display:"flex",alignItems:"center",gap:"12px",padding:"10px 14px"})}>
       <div style={{width:"36px",height:"36px",borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px",fontWeight:700,background:rc+"15",color:rc,border:"1.5px solid "+rc+"30"}}>{m.name.slice(0,2).toUpperCase()}</div>
       <div style={{flex:1}}>
         <div style={{fontSize:"14px",fontWeight:600,color:"#111"}}>{m.name}</div>
         <div style={{fontSize:"11px",color:"#9ca3af"}}>{ROLES_DISPLAY[m.role]||m.role}</div>
+        {editE?(
+          <div style={{display:"flex",gap:"4px",marginTop:"4px"}}>
+            <input type="email" value={emailVal} onChange={function(e){setEmailVal(e.target.value);}} placeholder="email@..." style={Object.assign({},B.inp,{fontSize:"11px",padding:"3px 7px",height:"26px"})}/>
+            <button onClick={function(){if(saveEmail)saveEmail(m.id,emailVal);setEditE(false);}} style={Object.assign({},B.pri,{fontSize:"11px",padding:"3px 9px"})}>✓</button>
+            <button onClick={function(){setEditE(false);setEmailVal(m.email||"");}} style={Object.assign({},B.sec,{fontSize:"11px",padding:"3px 9px"})}>✕</button>
+          </div>
+        ):(
+          <div onClick={function(){setEditE(true);}} style={{fontSize:"11px",color:m.email?"#6b7280":"#d1d5db",marginTop:"2px",cursor:"pointer"}}>
+            {m.email||"+ definir e-mail de acesso"}
+          </div>
+        )}
       </div>
       <button onClick={function(){if(window.confirm("Remover "+m.name+" da equipe?"))delMember(m.id);}} style={{background:"none",border:"1px solid #fecaca",borderRadius:"6px",cursor:"pointer",color:"#dc2626",fontSize:"12px",padding:"3px 9px",fontWeight:600}}>Remover</button>
     </div>
@@ -1274,8 +1299,9 @@ function EquipeTab(props){
   var rs=useState("Arquiteto"); var role=rs[0],setRole=rs[1];
   var ews=useState(false); var editW=ews[0],setEditW=ews[1];
   var wls=useState(Object.assign({},weights)); var wLocal=wls[0],setWLocal=wls[1];
-  function addMember(){if(!name.trim())return;saveTeam([...team,{id:"m"+uid(),name:name.trim(),role:role}]);setName("");setRole("Arquiteto");setShowForm(false);}
+  function addMember(){if(!name.trim())return;saveTeam([...team,{id:"m"+uid(),name:name.trim(),role:role,email:""}]);setName("");setRole("Arquiteto");setShowForm(false);}
   function delMember(id){saveTeam(team.filter(function(m){return m.id!==id;}));}
+  function saveEmail(id,email){saveTeam(team.map(function(m){return m.id===id?Object.assign({},m,{email:email.trim().toLowerCase()}):m;}));}
   return (
     <div>
       <div style={Object.assign({},B.card,{marginBottom:"1.5rem",borderTop:"3px solid "+RED})}>
@@ -1345,7 +1371,7 @@ function EquipeTab(props){
               <span style={{fontSize:"11px",padding:"1px 7px",borderRadius:"10px",background:rc+"15",color:rc,fontWeight:700}}>peso {weights[role]!=null?weights[role]:(DW[role]||1)}</span>
             </div>
             {members.map(function(m){
-              return <MemberCard key={m.id} m={m} rc={rc} weights={weights} delMember={delMember}/>;
+              return <MemberCard key={m.id} m={m} rc={rc} weights={weights} delMember={delMember} saveEmail={saveEmail}/>;
             })}
           </div>
         );
@@ -1360,7 +1386,7 @@ function EquipeTab(props){
               <span style={{fontSize:"12px",fontWeight:700,textTransform:"uppercase",letterSpacing:".07em",color:"#374151"}}>Outros</span>
               <span style={{fontSize:"11px",padding:"1px 7px",borderRadius:"10px",background:"#f3f4f6",color:"#9ca3af",fontWeight:700}}>{outros.length} cadastro{outros.length!==1?"s":""}</span>
             </div>
-            {outros.map(function(m){return <MemberCard key={m.id} m={m} rc="#9ca3af" weights={weights} delMember={delMember}/>;}) }
+            {outros.map(function(m){return <MemberCard key={m.id} m={m} rc="#9ca3af" weights={weights} delMember={delMember} saveEmail={saveEmail}/>;}) }
           </div>
         );
       })()}
@@ -1550,6 +1576,249 @@ function PlanTab(props){
             </div>
           )
         )}
+      </div>
+    </div>
+  );
+}
+
+var TASK_ST={
+  pendente:    {label:"Pendente",    bg:"#fef9c3",color:"#a16207"},
+  em_andamento:{label:"Em andamento",bg:"#dcfce7",color:"#15803d"},
+  pausado:     {label:"Pausado",     bg:"#fee2e2",color:"#dc2626"},
+  concluido:   {label:"Concluído",   bg:"#f3f4f6",color:"#6b7280"},
+};
+
+function TarefasTab(props){
+  var tarefas=props.tarefas,saveTarefas=props.saveTarefas,team=props.team,projects=props.projects,authUser=props.authUser;
+  var ps=useState(""); var pessoa=ps[0],setPessoa=ps[1];
+  var prs=useState(""); var projeto=prs[0],setProjeto=prs[1];
+  var ds=useState(""); var desc=ds[0],setDesc=ds[1];
+  var errs=useState(""); var err=errs[0],setErr=errs[1];
+
+  function addTarefa(){
+    if(!pessoa||!projeto||!desc.trim()){setErr("Preencha todos os campos.");return;}
+    setErr("");
+    var membro=team.find(function(m){return m.id===pessoa;});
+    var proj=projects.find(function(p){return p.id===projeto;});
+    var adminNome=ADMIN_NAMES[(authUser?authUser.email.toLowerCase():"")] || (authUser?authUser.email.split("@")[0]:"Admin");
+    var nova={id:uid(),membroId:pessoa,membroNome:membro?membro.name:"",projetoId:projeto,projetoNome:proj?proj.name:"",descricao:desc.trim(),status:"pendente",lida:false,criadoEm:new Date().toISOString(),atribuidoPor:adminNome,iniciadoEm:null,pausadoEm:null,concluidoEm:null};
+    saveTarefas([...tarefas,nova]);
+    setPessoa("");setProjeto("");setDesc("");
+  }
+
+  var ativas=tarefas.filter(function(t){return t.status!=="concluido";});
+  var concluidas=tarefas.filter(function(t){return t.status==="concluido";});
+
+  return (
+    <div>
+      <div style={B.lbl}>Atribuir nova tarefa</div>
+      <div style={Object.assign({},B.card,{marginBottom:"1.5rem"})}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"8px",marginBottom:"8px"}}>
+          <select value={pessoa} onChange={function(e){setPessoa(e.target.value);}} style={B.inp}>
+            <option value="">Colaborador...</option>
+            {team.map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
+          </select>
+          <select value={projeto} onChange={function(e){setProjeto(e.target.value);}} style={B.inp}>
+            <option value="">Projeto...</option>
+            {projects.filter(function(p){return p.status!=="concluido";}).map(function(p){return <option key={p.id} value={p.id}>{p.name}</option>;})}
+          </select>
+        </div>
+        <div style={{display:"flex",gap:"8px"}}>
+          <input type="text" value={desc} onChange={function(e){setDesc(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")addTarefa();}} placeholder="Descrição da tarefa..." style={Object.assign({},B.inp,{flex:1})}/>
+          <button onClick={addTarefa} style={B.pri}>Atribuir</button>
+        </div>
+        {err&&<div style={{fontSize:"12px",color:"#dc2626",marginTop:"6px"}}>{err}</div>}
+      </div>
+
+      <div style={B.lbl}>Todas as tarefas ativas</div>
+      {ativas.length===0?(
+        <div style={{textAlign:"center",padding:"2.5rem",color:"#9ca3af",fontSize:"13px"}}>Nenhuma tarefa ativa no momento.</div>
+      ):(
+        ativas.map(function(t){
+          var st=TASK_ST[t.status]||TASK_ST.pendente;
+          return (
+            <div key={t.id} style={Object.assign({},B.card,{display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap"})}>
+              <div style={{fontWeight:700,fontSize:"14px",color:"#111",minWidth:"80px",flexShrink:0}}>{t.membroNome}</div>
+              <div style={{fontSize:"13px",color:"#9ca3af",flexShrink:0,minWidth:"130px"}}>{t.projetoNome}</div>
+              <div style={{fontSize:"13px",color:"#374151",flex:1,minWidth:"100px"}}>{t.descricao}</div>
+              <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0}}>{st.label}</span>
+              <button onClick={function(){if(window.confirm("Remover tarefa?"))saveTarefas(tarefas.filter(function(x){return x.id!==t.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",flexShrink:0,lineHeight:1})}>×</button>
+            </div>
+          );
+        })
+      )}
+      {concluidas.length>0&&(
+        <div style={{marginTop:"1.25rem",borderTop:"1px solid #f0f0f0",paddingTop:"1rem"}}>
+          <div style={Object.assign({},B.lbl,{cursor:"pointer"})} onClick={function(){var el=document.getElementById("conc-list");if(el)el.style.display=el.style.display==="none"?"block":"none";}}>
+            Concluídas ({concluidas.length}) ▾
+          </div>
+          <div id="conc-list" style={{display:"none"}}>
+            {concluidas.map(function(t){
+              return (
+                <div key={t.id} style={Object.assign({},B.card,{display:"flex",alignItems:"center",gap:"12px",opacity:.55,flexWrap:"wrap"})}>
+                  <div style={{fontWeight:700,fontSize:"14px",color:"#111",minWidth:"80px",flexShrink:0}}>{t.membroNome}</div>
+                  <div style={{fontSize:"13px",color:"#9ca3af",flexShrink:0,minWidth:"130px"}}>{t.projetoNome}</div>
+                  <div style={{fontSize:"13px",color:"#374151",flex:1}}>{t.descricao}</div>
+                  <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:"#f3f4f6",color:"#6b7280",flexShrink:0}}>Concluído</span>
+                  <button onClick={function(){saveTarefas(tarefas.filter(function(x){return x.id!==t.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",flexShrink:0,lineHeight:1})}>×</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UsuarioApp(props){
+  var authUser=props.authUser,handleLogout=props.handleLogout,tarefas=props.tarefas,currentMember=props.currentMember,saveTarefas=props.saveTarefas;
+  var ts=useState("minhas"); var tab=ts[0],setTab=ts[1];
+
+  var minhasTarefas=currentMember?tarefas.filter(function(t){return t.membroId===currentMember.id;}):[];
+  var naoLidas=minhasTarefas.filter(function(t){return !t.lida&&t.status==="pendente";});
+  var ativas=minhasTarefas.filter(function(t){return t.status!=="concluido";});
+  var concluidas=minhasTarefas.filter(function(t){return t.status==="concluido";});
+
+  function marcarLidas(){
+    var updated=tarefas.map(function(t){return (currentMember&&t.membroId===currentMember.id&&!t.lida)?Object.assign({},t,{lida:true}):t;});
+    saveTarefas(updated);
+  }
+
+  function changeStatus(taskId,newStatus){
+    var now=new Date().toISOString();
+    var updated=tarefas.map(function(t){
+      if(t.id!==taskId)return t;
+      return Object.assign({},t,{
+        status:newStatus,
+        iniciadoEm:newStatus==="em_andamento"&&!t.iniciadoEm?now:t.iniciadoEm,
+        pausadoEm:newStatus==="pausado"?now:t.pausadoEm,
+        concluidoEm:newStatus==="concluido"?now:t.concluidoEm,
+      });
+    });
+    saveTarefas(updated);
+  }
+
+  function getActions(status){
+    if(status==="pendente")    return [{label:"Iniciar",icon:"▷",next:"em_andamento"}];
+    if(status==="em_andamento")return [{label:"Pausar",icon:"⏸",next:"pausado"},{label:"Concluir",icon:"✓",next:"concluido"}];
+    if(status==="pausado")     return [{label:"Retomar",icon:"▷",next:"em_andamento"},{label:"Concluir",icon:"✓",next:"concluido"}];
+    return [];
+  }
+
+  return (
+    <div style={{background:"#f9fafb",minHeight:"100vh",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
+      <div style={{height:"3px",background:RED}}/>
+      <div style={{background:"#fff",borderBottom:"1px solid #f0f0f0",padding:"0 1.25rem",position:"sticky",top:0,zIndex:100,boxShadow:"0 1px 3px rgba(0,0,0,.04)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0 0"}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:"10px"}}>
+            <span style={{fontSize:"22px",fontWeight:800,letterSpacing:"-1px",color:"#111"}}>M<span style={{color:RED}}>+</span>M</span>
+            <span style={{fontSize:"11px",color:"#9ca3af",letterSpacing:".05em",textTransform:"uppercase",fontWeight:500}}>Arquitetura</span>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
+            <span style={{fontSize:"11px",color:"#9ca3af",maxWidth:"140px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{authUser.email}</span>
+            <button onClick={handleLogout} style={{fontSize:"11px",padding:"3px 9px",borderRadius:"6px",border:"1px solid #e5e7eb",background:"transparent",color:"#6b7280",cursor:"pointer"}}>Sair</button>
+          </div>
+        </div>
+        <div style={{display:"flex",marginTop:"4px"}}>
+          {[["minhas","Minhas tarefas"],["historico","Meu histórico"]].map(function(t){
+            return (
+              <button key={t[0]} onClick={function(){setTab(t[0]);}} style={{background:"transparent",border:"none",cursor:"pointer",padding:"7px 12px",fontSize:"12px",fontWeight:tab===t[0]?700:400,color:tab===t[0]?"#111":"#9ca3af",borderBottom:tab===t[0]?"2.5px solid "+RED:"2.5px solid transparent",whiteSpace:"nowrap"}}>
+                {t[1]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{padding:"1.25rem",maxWidth:"640px",margin:"0 auto"}}>
+        {!currentMember&&(
+          <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:"12px",padding:"1.25rem",textAlign:"center",color:"#dc2626",fontSize:"13px",lineHeight:1.7}}>
+            Seu e-mail não está vinculado a nenhum membro da equipe.<br/>Peça ao administrador para configurar seu e-mail na aba Equipe.
+          </div>
+        )}
+
+        {currentMember&&tab==="minhas"&&(
+          <div>
+            {naoLidas.length>0&&(
+              <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"1.25rem"}}>
+                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px"}}>
+                  <span style={{fontSize:"16px"}}>🔔</span>
+                  <span style={{fontSize:"14px",fontWeight:700,color:"#111"}}>
+                    {naoLidas.length} nova{naoLidas.length!==1?"s":""} tarefa{naoLidas.length!==1?"s":""} atribuída{naoLidas.length!==1?"s":""} por {naoLidas[0].atribuidoPor}
+                  </span>
+                </div>
+                {naoLidas.map(function(t){
+                  return <div key={t.id} style={{fontSize:"13px",color:"#6b7280",paddingLeft:"24px",marginBottom:"4px"}}>{t.projetoNome} — {t.descricao}</div>;
+                })}
+                <button onClick={marcarLidas} style={Object.assign({},B.sec,{fontSize:"12px",marginTop:"10px",width:"100%",textAlign:"center"})}>Entendido</button>
+              </div>
+            )}
+
+            <div style={B.lbl}>Suas tarefas em andamento</div>
+
+            {ativas.length===0?(
+              <div style={{textAlign:"center",padding:"2.5rem",color:"#9ca3af",fontSize:"13px"}}>Nenhuma tarefa pendente no momento.</div>
+            ):(
+              ativas.map(function(t){
+                var st=TASK_ST[t.status]||TASK_ST.pendente;
+                var acts=getActions(t.status);
+                return (
+                  <div key={t.id} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"12px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:acts.length?"10px":"0"}}>
+                      <div>
+                        <div style={{fontSize:"15px",fontWeight:700,color:"#111",marginBottom:"3px"}}>{t.projetoNome}</div>
+                        <div style={{fontSize:"13px",color:"#9ca3af"}}>{t.descricao}</div>
+                      </div>
+                      <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0,marginLeft:"8px",whiteSpace:"nowrap"}}>{st.label}</span>
+                    </div>
+                    {acts.length>0&&(
+                      <div style={{display:"grid",gridTemplateColumns:"repeat("+acts.length+",1fr)",gap:"8px"}}>
+                        {acts.map(function(a){
+                          return (
+                            <button key={a.next} onClick={function(){changeStatus(t.id,a.next);}} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"8px",padding:"9px",fontSize:"13px",color:"#374151",cursor:"pointer",textAlign:"center",fontWeight:500}}>
+                              {a.icon} {a.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+
+            {concluidas.length>0&&(
+              <div style={{marginTop:"1.25rem",borderTop:"1px solid #f0f0f0",paddingTop:"1rem"}}>
+                <div style={Object.assign({},B.lbl,{marginBottom:"8px",cursor:"pointer"})} onClick={function(){var el=document.getElementById("u-conc");if(el)el.style.display=el.style.display==="none"?"block":"none";}}>
+                  Concluídas ({concluidas.length}) ▾
+                </div>
+                <div id="u-conc" style={{display:"none"}}>
+                  {concluidas.map(function(t){
+                    return (
+                      <div key={t.id} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"8px",opacity:.6}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                          <div>
+                            <div style={{fontSize:"14px",fontWeight:700,color:"#111",marginBottom:"2px"}}>{t.projetoNome}</div>
+                            <div style={{fontSize:"13px",color:"#9ca3af"}}>{t.descricao}</div>
+                          </div>
+                          <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:"#f3f4f6",color:"#6b7280",marginLeft:"8px"}}>Concluído</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab==="historico"&&(
+          <div style={{textAlign:"center",padding:"3rem",color:"#9ca3af",fontSize:"13px"}}>Histórico de tarefas em breve.</div>
+        )}
+      </div>
+      <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>
+        Criado por MAR Consultoria 2026 - v2.0
       </div>
     </div>
   );
