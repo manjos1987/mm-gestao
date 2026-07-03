@@ -1926,22 +1926,27 @@ function UsuarioApp(props){
           </div>
         )}
 
+        {naoLidas.length>0&&(
+          <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.45)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <div style={{background:"#fff",borderRadius:"16px",padding:"1.5rem",maxWidth:"360px",width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+              <div style={{textAlign:"center",marginBottom:"1rem"}}>
+                <div style={{fontSize:"36px",marginBottom:"8px"}}>🔔</div>
+                <div style={{fontSize:"16px",fontWeight:700,color:"#111"}}>Nova{naoLidas.length!==1?"s":""} tarefa{naoLidas.length!==1?"s":""}!</div>
+                <div style={{fontSize:"13px",color:"#6b7280",marginTop:"4px"}}>Atribuída{naoLidas.length!==1?"s":""} por {naoLidas[0].atribuidoPor}</div>
+              </div>
+              {naoLidas.map(function(t){return(
+                <div key={t.id} style={{background:"#f9fafb",borderRadius:"8px",padding:"10px 12px",marginBottom:"8px"}}>
+                  <div style={{fontSize:"13px",fontWeight:600,color:"#111"}}>{t.projetoNome}</div>
+                  <div style={{fontSize:"12px",color:"#6b7280",marginTop:"2px"}}>{t.descricao}</div>
+                </div>
+              );})}
+              <button onClick={marcarLidas} style={Object.assign({},B.pri,{width:"100%",padding:"11px",fontSize:"14px",marginTop:"4px"})}>Entendido</button>
+            </div>
+          </div>
+        )}
+
         {currentMember&&tab==="minhas"&&(
           <div>
-            {naoLidas.length>0&&(
-              <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"1.25rem"}}>
-                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px"}}>
-                  <span style={{fontSize:"16px"}}>🔔</span>
-                  <span style={{fontSize:"14px",fontWeight:700,color:"#111"}}>
-                    {naoLidas.length} nova{naoLidas.length!==1?"s":""} tarefa{naoLidas.length!==1?"s":""} atribuída{naoLidas.length!==1?"s":""} por {naoLidas[0].atribuidoPor}
-                  </span>
-                </div>
-                {naoLidas.map(function(t){
-                  return <div key={t.id} style={{fontSize:"13px",color:"#6b7280",paddingLeft:"24px",marginBottom:"4px"}}>{t.projetoNome} — {t.descricao}</div>;
-                })}
-                <button onClick={marcarLidas} style={Object.assign({},B.sec,{fontSize:"12px",marginTop:"10px",width:"100%",textAlign:"center"})}>Entendido</button>
-              </div>
-            )}
 
             <div style={B.lbl}>Suas tarefas em andamento</div>
 
@@ -2034,7 +2039,7 @@ function UsuarioApp(props){
 
 function GestorApp(props){
   var authUser=props.authUser,handleLogout=props.handleLogout,tarefas=props.tarefas,saveTarefas=props.saveTarefas,currentMember=props.currentMember,team=props.team||[],projects=props.projects||[];
-  var ts=useState("atribuir"); var tab=ts[0],setTab=ts[1];
+  var ts=useState("minhas"); var tab=ts[0],setTab=ts[1];
   var sms=useState(false); var senhaMode=sms[0],setSenhaMode=sms[1];
   var sas=useState(""); var senhaAtual=sas[0],setSenhaAtual=sas[1];
   var sns=useState(""); var senhaNova=sns[0],setSenhaNova=sns[1];
@@ -2220,18 +2225,27 @@ function GestorApp(props){
           </div>
         )}
 
+        {naoLidas.length>0&&(
+          <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.45)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <div style={{background:"#fff",borderRadius:"16px",padding:"1.5rem",maxWidth:"360px",width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+              <div style={{textAlign:"center",marginBottom:"1rem"}}>
+                <div style={{fontSize:"36px",marginBottom:"8px"}}>🔔</div>
+                <div style={{fontSize:"16px",fontWeight:700,color:"#111"}}>Nova{naoLidas.length!==1?"s":""} tarefa{naoLidas.length!==1?"s":""}!</div>
+                <div style={{fontSize:"13px",color:"#6b7280",marginTop:"4px"}}>Atribuída{naoLidas.length!==1?"s":""} por {naoLidas[0].atribuidoPor}</div>
+              </div>
+              {naoLidas.map(function(t){return(
+                <div key={t.id} style={{background:"#f9fafb",borderRadius:"8px",padding:"10px 12px",marginBottom:"8px"}}>
+                  <div style={{fontSize:"13px",fontWeight:600,color:"#111"}}>{t.projetoNome}</div>
+                  <div style={{fontSize:"12px",color:"#6b7280",marginTop:"2px"}}>{t.descricao}</div>
+                </div>
+              );})}
+              <button onClick={marcarLidas} style={Object.assign({},B.pri,{width:"100%",padding:"11px",fontSize:"14px",marginTop:"4px"})}>Entendido</button>
+            </div>
+          </div>
+        )}
+
         {tab==="minhas"&&(
           <div>
-            {naoLidas.length>0&&(
-              <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"1.25rem"}}>
-                <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"8px"}}>
-                  <span style={{fontSize:"16px"}}>🔔</span>
-                  <span style={{fontSize:"14px",fontWeight:700,color:"#111"}}>{naoLidas.length} nova{naoLidas.length!==1?"s":""} tarefa{naoLidas.length!==1?"s":""} atribuída{naoLidas.length!==1?"s":""} por {naoLidas[0].atribuidoPor}</span>
-                </div>
-                {naoLidas.map(function(t){return <div key={t.id} style={{fontSize:"13px",color:"#6b7280",paddingLeft:"24px",marginBottom:"4px"}}>{t.projetoNome} — {t.descricao}</div>;})}
-                <button onClick={marcarLidas} style={Object.assign({},B.sec,{fontSize:"12px",marginTop:"10px",width:"100%",textAlign:"center"})}>Entendido</button>
-              </div>
-            )}
             {!currentMember&&(
               <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:"12px",padding:"1.25rem",textAlign:"center",color:"#dc2626",fontSize:"13px",lineHeight:1.7}}>
                 Seu e-mail não está vinculado a nenhum membro da equipe.<br/>Peça ao administrador para configurar seu e-mail na aba Equipe.
