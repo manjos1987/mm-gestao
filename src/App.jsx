@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
-import { initializeApp, getApps, getApp } from "firebase/app";
+import { initializeApp, getApps, getApp, deleteApp } from "firebase/app";
 import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import html2canvas from "html2canvas";
 
 const firebaseConfig = {
@@ -1269,25 +1269,86 @@ function MemberCard(props){
   var m=props.m,rc=props.rc,delMember=props.delMember,saveEmail=props.saveEmail;
   var ees=useState(false); var editE=ees[0],setEditE=ees[1];
   var evs=useState(m.email||""); var emailVal=evs[0],setEmailVal=evs[1];
+  var cms=useState(false); var criarMode=cms[0],setCriarMode=cms[1];
+  var cps=useState(""); var criarPass=cps[0],setCriarPass=cps[1];
+  var cls=useState(false); var criarLoad=cls[0],setCriarLoad=cls[1];
+  var css2=useState(""); var criarStatus=css2[0],setCriarStatus=css2[1];
+  var rls=useState(false); var resetLoad=rls[0],setResetLoad=rls[1];
+  var rss=useState(""); var resetStatus=rss[0],setResetStatus=rss[1];
+
+  async function handleCriarAcesso(){
+    if(!criarPass||criarPass.length<6){setCriarStatus("Mínimo 6 caracteres.");return;}
+    setCriarLoad(true);setCriarStatus("");
+    try{
+      var appName="cria-"+Date.now();
+      var sec=initializeApp(firebaseConfig,appName);
+      var secAuth=getAuth(sec);
+      await createUserWithEmailAndPassword(secAuth,m.email,criarPass);
+      await secAuth.signOut();
+      await deleteApp(sec);
+      setCriarStatus("ok");setCriarMode(false);setCriarPass("");
+    }catch(ex){
+      var msgs={"auth/email-already-in-use":"Acesso já existe para este e-mail.","auth/invalid-email":"E-mail inválido.","auth/weak-password":"Senha muito fraca (mín. 6 caracteres)."};
+      setCriarStatus(msgs[ex.code]||"Erro: "+ex.message);
+    }
+    setCriarLoad(false);
+  }
+
+  async function handleRedefinirSenha(){
+    setResetLoad(true);setResetStatus("");
+    try{
+      var app=getApps().length?getApp():initializeApp(firebaseConfig);
+      await sendPasswordResetEmail(getAuth(app),m.email);
+      setResetStatus("ok");
+    }catch(ex){
+      setResetStatus("Erro ao enviar e-mail.");
+    }
+    setResetLoad(false);
+  }
+
   return (
-    <div style={Object.assign({},B.card,{display:"flex",alignItems:"center",gap:"12px",padding:"10px 14px"})}>
-      <div style={{width:"36px",height:"36px",borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px",fontWeight:700,background:rc+"15",color:rc,border:"1.5px solid "+rc+"30"}}>{m.name.slice(0,2).toUpperCase()}</div>
-      <div style={{flex:1}}>
-        <div style={{fontSize:"14px",fontWeight:600,color:"#111"}}>{m.name}</div>
-        <div style={{fontSize:"11px",color:"#9ca3af"}}>{ROLES_DISPLAY[m.role]||m.role}</div>
-        {editE?(
-          <div style={{display:"flex",gap:"4px",marginTop:"4px"}}>
-            <input type="email" value={emailVal} onChange={function(e){setEmailVal(e.target.value);}} placeholder="email@..." style={Object.assign({},B.inp,{fontSize:"11px",padding:"3px 7px",height:"26px"})}/>
-            <button onClick={function(){if(saveEmail)saveEmail(m.id,emailVal);setEditE(false);}} style={Object.assign({},B.pri,{fontSize:"11px",padding:"3px 9px"})}>✓</button>
-            <button onClick={function(){setEditE(false);setEmailVal(m.email||"");}} style={Object.assign({},B.sec,{fontSize:"11px",padding:"3px 9px"})}>✕</button>
-          </div>
-        ):(
-          <div onClick={function(){setEditE(true);}} style={{fontSize:"11px",color:m.email?"#6b7280":"#d1d5db",marginTop:"2px",cursor:"pointer"}}>
-            {m.email||"+ definir e-mail de acesso"}
-          </div>
-        )}
+    <div style={Object.assign({},B.card,{padding:"12px 14px"})}>
+      <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
+        <div style={{width:"36px",height:"36px",borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"12px",fontWeight:700,background:rc+"15",color:rc,border:"1.5px solid "+rc+"30"}}>{m.name.slice(0,2).toUpperCase()}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:"14px",fontWeight:600,color:"#111"}}>{m.name}</div>
+          <div style={{fontSize:"11px",color:"#9ca3af"}}>{ROLES_DISPLAY[m.role]||m.role}</div>
+          {editE?(
+            <div style={{display:"flex",gap:"4px",marginTop:"4px"}}>
+              <input type="email" value={emailVal} onChange={function(e){setEmailVal(e.target.value);}} placeholder="email@..." style={Object.assign({},B.inp,{fontSize:"11px",padding:"3px 7px",height:"26px"})}/>
+              <button onClick={function(){if(saveEmail)saveEmail(m.id,emailVal);setEditE(false);}} style={Object.assign({},B.pri,{fontSize:"11px",padding:"3px 9px"})}>✓</button>
+              <button onClick={function(){setEditE(false);setEmailVal(m.email||"");}} style={Object.assign({},B.sec,{fontSize:"11px",padding:"3px 9px"})}>✕</button>
+            </div>
+          ):(
+            <div onClick={function(){setEditE(true);setCriarMode(false);}} style={{fontSize:"11px",color:m.email?"#6b7280":"#d1d5db",marginTop:"2px",cursor:"pointer"}}>
+              {m.email||"+ definir e-mail de acesso"}
+            </div>
+          )}
+        </div>
+        <button onClick={function(){if(window.confirm("Remover "+m.name+" da equipe?"))delMember(m.id);}} style={{background:"none",border:"1px solid #fecaca",borderRadius:"6px",cursor:"pointer",color:"#dc2626",fontSize:"12px",padding:"3px 9px",fontWeight:600,flexShrink:0}}>Remover</button>
       </div>
-      <button onClick={function(){if(window.confirm("Remover "+m.name+" da equipe?"))delMember(m.id);}} style={{background:"none",border:"1px solid #fecaca",borderRadius:"6px",cursor:"pointer",color:"#dc2626",fontSize:"12px",padding:"3px 9px",fontWeight:600}}>Remover</button>
+      {m.email&&!editE&&(
+        <div style={{marginTop:"10px",paddingTop:"10px",borderTop:"1px solid #f0f0f0"}}>
+          {criarMode?(
+            <div style={{display:"flex",gap:"6px",alignItems:"center",flexWrap:"wrap",marginBottom:"6px"}}>
+              <span style={{fontSize:"11px",color:"#9ca3af",flexShrink:0}}>{m.email}</span>
+              <input type="password" value={criarPass} onChange={function(e){setCriarPass(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")handleCriarAcesso();}} placeholder="Senha..." style={Object.assign({},B.inp,{fontSize:"11px",padding:"4px 8px",width:"130px"})}/>
+              <button onClick={handleCriarAcesso} disabled={criarLoad} style={Object.assign({},B.pri,{fontSize:"11px",padding:"4px 12px"})}>{criarLoad?"Criando...":"Criar"}</button>
+              <button onClick={function(){setCriarMode(false);setCriarPass("");setCriarStatus("");}} style={Object.assign({},B.sec,{fontSize:"11px",padding:"4px 10px"})}>Cancelar</button>
+            </div>
+          ):(
+            <div style={{display:"flex",gap:"6px",flexWrap:"wrap",alignItems:"center"}}>
+              <button onClick={function(){setCriarMode(true);setCriarStatus("");setResetStatus("");}} style={Object.assign({},B.sec,{fontSize:"11px",padding:"4px 12px"})}>+ Criar acesso</button>
+              <button onClick={handleRedefinirSenha} disabled={resetLoad} style={Object.assign({},B.sec,{fontSize:"11px",padding:"4px 12px"})}>{resetLoad?"Enviando...":"Redefinir senha"}</button>
+              {criarStatus==="ok"&&<span style={{fontSize:"11px",color:"#15803d"}}>✓ Acesso criado!</span>}
+              {criarStatus&&criarStatus!=="ok"&&<span style={{fontSize:"11px",color:"#dc2626"}}>{criarStatus}</span>}
+              {resetStatus==="ok"&&<span style={{fontSize:"11px",color:"#15803d"}}>✓ E-mail de redefinição enviado!</span>}
+              {resetStatus&&resetStatus!=="ok"&&<span style={{fontSize:"11px",color:"#dc2626"}}>{resetStatus}</span>}
+            </div>
+          )}
+          {criarMode&&criarStatus&&criarStatus!=="ok"&&<div style={{fontSize:"11px",color:"#dc2626",marginTop:"4px"}}>{criarStatus}</div>}
+        </div>
+      )}
     </div>
   );
 }
@@ -1674,6 +1735,32 @@ function TarefasTab(props){
 function UsuarioApp(props){
   var authUser=props.authUser,handleLogout=props.handleLogout,tarefas=props.tarefas,currentMember=props.currentMember,saveTarefas=props.saveTarefas;
   var ts=useState("minhas"); var tab=ts[0],setTab=ts[1];
+  var sms=useState(false); var senhaMode=sms[0],setSenhaMode=sms[1];
+  var sas=useState(""); var senhaAtual=sas[0],setSenhaAtual=sas[1];
+  var sns=useState(""); var senhaNova=sns[0],setSenhaNova=sns[1];
+  var scs=useState(""); var senhaConf=scs[0],setSenhaConf=scs[1];
+  var sls=useState(false); var senhaLoad=sls[0],setSenhaLoad=sls[1];
+  var sss=useState(""); var senhaStatus=sss[0],setSenhaStatus=sss[1];
+
+  async function handleAlterarSenha(){
+    if(!senhaAtual||!senhaNova||!senhaConf){setSenhaStatus("Preencha todos os campos.");return;}
+    if(senhaNova!==senhaConf){setSenhaStatus("A nova senha e a confirmação não coincidem.");return;}
+    if(senhaNova.length<6){setSenhaStatus("Senha mínima de 6 caracteres.");return;}
+    setSenhaLoad(true);setSenhaStatus("");
+    try{
+      var app=getApps().length?getApp():initializeApp(firebaseConfig);
+      var auth=getAuth(app);
+      var credential=EmailAuthProvider.credential(authUser.email,senhaAtual);
+      await reauthenticateWithCredential(auth.currentUser,credential);
+      await updatePassword(auth.currentUser,senhaNova);
+      setSenhaStatus("ok");setSenhaAtual("");setSenhaNova("");setSenhaConf("");
+      setTimeout(function(){setSenhaMode(false);setSenhaStatus("");},2000);
+    }catch(ex){
+      var msgs={"auth/wrong-password":"Senha atual incorreta.","auth/invalid-credential":"Senha atual incorreta.","auth/weak-password":"Nova senha muito fraca."};
+      setSenhaStatus(msgs[ex.code]||"Erro ao alterar senha.");
+    }
+    setSenhaLoad(false);
+  }
 
   var minhasTarefas=currentMember?tarefas.filter(function(t){return t.membroId===currentMember.id;}):[];
   var naoLidas=minhasTarefas.filter(function(t){return !t.lida&&t.status==="pendente";});
@@ -1716,7 +1803,8 @@ function UsuarioApp(props){
             <span style={{fontSize:"11px",color:"#9ca3af",letterSpacing:".05em",textTransform:"uppercase",fontWeight:500}}>Arquitetura</span>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:"8px"}}>
-            <span style={{fontSize:"11px",color:"#9ca3af",maxWidth:"140px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{authUser.email}</span>
+            <span style={{fontSize:"11px",color:"#9ca3af",maxWidth:"120px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{authUser.email}</span>
+            <button onClick={function(){setSenhaMode(function(v){return !v;});setSenhaStatus("");}} style={{fontSize:"11px",padding:"3px 9px",borderRadius:"6px",border:"1px solid #e5e7eb",background:"transparent",color:"#6b7280",cursor:"pointer"}}>Senha</button>
             <button onClick={handleLogout} style={{fontSize:"11px",padding:"3px 9px",borderRadius:"6px",border:"1px solid #e5e7eb",background:"transparent",color:"#6b7280",cursor:"pointer"}}>Sair</button>
           </div>
         </div>
@@ -1732,6 +1820,22 @@ function UsuarioApp(props){
       </div>
 
       <div style={{padding:"1.25rem",maxWidth:"640px",margin:"0 auto"}}>
+        {senhaMode&&(
+          <div style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"1.25rem"}}>
+            <div style={{fontSize:"14px",fontWeight:700,color:"#111",marginBottom:"12px"}}>Alterar senha</div>
+            <div style={{display:"flex",flexDirection:"column",gap:"8px",marginBottom:"12px"}}>
+              <input type="password" value={senhaAtual} onChange={function(e){setSenhaAtual(e.target.value);}} placeholder="Senha atual" style={B.inp}/>
+              <input type="password" value={senhaNova} onChange={function(e){setSenhaNova(e.target.value);}} placeholder="Nova senha (mín. 6 caracteres)" style={B.inp}/>
+              <input type="password" value={senhaConf} onChange={function(e){setSenhaConf(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")handleAlterarSenha();}} placeholder="Confirmar nova senha" style={B.inp}/>
+            </div>
+            {senhaStatus&&senhaStatus!=="ok"&&<div style={{fontSize:"12px",color:"#dc2626",marginBottom:"8px"}}>{senhaStatus}</div>}
+            {senhaStatus==="ok"&&<div style={{fontSize:"12px",color:"#15803d",marginBottom:"8px"}}>✓ Senha alterada com sucesso!</div>}
+            <div style={{display:"flex",gap:"8px"}}>
+              <button onClick={handleAlterarSenha} disabled={senhaLoad} style={B.pri}>{senhaLoad?"Salvando...":"Salvar senha"}</button>
+              <button onClick={function(){setSenhaMode(false);setSenhaAtual("");setSenhaNova("");setSenhaConf("");setSenhaStatus("");}} style={B.sec}>Cancelar</button>
+            </div>
+          </div>
+        )}
         {!currentMember&&(
           <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:"12px",padding:"1.25rem",textAlign:"center",color:"#dc2626",fontSize:"13px",lineHeight:1.7}}>
             Seu e-mail não está vinculado a nenhum membro da equipe.<br/>Peça ao administrador para configurar seu e-mail na aba Equipe.
