@@ -1776,6 +1776,8 @@ function TarefasTab(props){
   var ds=useState(""); var desc=ds[0],setDesc=ds[1];
   var errs=useState(""); var err=errs[0],setErr=errs[1];
   var dels=useState(null); var delegando=dels[0],setDelegando=dels[1];
+  var faps=useState(""); var fAtivaPessoa=faps[0],setFAtivaPessoa=faps[1];
+  var faprs=useState(""); var fAtivaProj=faprs[0],setFAtivaProj=faprs[1];
   var fcps=useState(""); var fConcPessoa=fcps[0],setFConcPessoa=fcps[1];
   var fcprs=useState(""); var fConcProj=fcprs[0],setFConcProj=fcprs[1];
   var projSel=projects.find(function(p){return p.id===projeto;});
@@ -1795,6 +1797,7 @@ function TarefasTab(props){
 
   var ativas=tarefas.filter(function(t){return t.status!=="concluido";});
   var concluidas=tarefas.filter(function(t){return t.status==="concluido";});
+  var ativasFiltradas=ativas.filter(function(t){return(!fAtivaProj||t.projetoNome===fAtivaProj)&&(!fAtivaPessoa||t.membroNome===fAtivaPessoa);});
 
   return (
     <div>
@@ -1826,10 +1829,20 @@ function TarefasTab(props){
       </div>
 
       <div style={B.lbl}>Todas as tarefas ativas</div>
-      {ativas.length===0?(
-        <div style={{textAlign:"center",padding:"2.5rem",color:"#9ca3af",fontSize:"13px"}}>Nenhuma tarefa ativa no momento.</div>
+      <div style={{display:"flex",gap:"8px",marginBottom:"10px",flexWrap:"wrap"}}>
+        <select value={fAtivaProj} onChange={function(e){setFAtivaProj(e.target.value);}} style={Object.assign({},B.inp,{flex:"1",minWidth:"140px",fontSize:"12px"})}>
+          <option value="">Todos os projetos</option>
+          {[...new Set(ativas.map(function(t){return t.projetoNome;}).filter(Boolean))].sort().map(function(p){return <option key={p} value={p}>{p}</option>;})}
+        </select>
+        <select value={fAtivaPessoa} onChange={function(e){setFAtivaPessoa(e.target.value);}} style={Object.assign({},B.inp,{flex:"1",minWidth:"140px",fontSize:"12px"})}>
+          <option value="">Todos os membros</option>
+          {[...new Set(ativas.map(function(t){return t.membroNome;}).filter(Boolean))].sort().map(function(p){return <option key={p} value={p}>{p}</option>;})}
+        </select>
+      </div>
+      {ativasFiltradas.length===0?(
+        <div style={{textAlign:"center",padding:"2.5rem",color:"#9ca3af",fontSize:"13px"}}>{ativas.length===0?"Nenhuma tarefa ativa no momento.":"Nenhuma tarefa corresponde ao filtro."}</div>
       ):(
-        ativas.map(function(t){
+        ativasFiltradas.map(function(t){
           var st=TASK_ST[t.status]||TASK_ST.pendente;
           var isDel=delegando&&delegando.taskId===t.id;
           return (
