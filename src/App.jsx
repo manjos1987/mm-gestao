@@ -395,7 +395,12 @@ export default function App(){
   function saveWeights(w){setWeights(w);persist("weights",w);}
   function saveDiary(d){setDiaryState(d);persist("diary",d);}
   function savePlanning(p){setPlanning(p);persist("planning",p);}
-  function saveTarefas(t){setTarefas(t);persist("tarefas",t);}
+  function saveTarefas(t){
+    setTarefas(t);
+    persist("tarefas",t);
+    var snap=t.filter(function(x){return x.status!=="concluido"||(x.concluidoEm&&x.concluidoEm.startsWith(TODAY));}).map(function(x){return {id:x.id,membroNome:x.membroNome,projetoNome:x.projetoNome,atividadeNome:x.atividadeNome||"",descricao:x.descricao,status:x.status};});
+    persist("history",{[TODAY]:Object.assign({},history[TODAY]||{},{tarefasSnap:snap})});
+  }
 
   async function genMsg(){
     if(!report.length)return;
