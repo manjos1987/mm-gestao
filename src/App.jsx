@@ -525,7 +525,7 @@ export default function App(){
         </div>
       </div>
       <div style={{padding:"1.25rem",maxWidth:"800px",margin:"0 auto"}}>
-        {tab==="visao"    && <DashTab report={report} teamLoad={teamLoad} projects={projects} cont={cont} team={team} history={history} colorMap={colorMap} weights={weights}/>}
+        {tab==="visao"    && <DashTab report={report} teamLoad={teamLoad} projects={projects} cont={cont} team={team} history={history} colorMap={colorMap} weights={weights} tarefas={tarefas}/>}
         {tab==="hoje"     && <HojeTab team={team} projects={projects} cont={cont} normA={normA} colorMap={colorMap} toggleProj={toggleProj} date={date} setDate={setDate} savedDate={savedDate} assignedCnt={assignedCnt} saveAlloc={saveAlloc} flash={flash} report={report} allocSubitems={allocSubitems} setAllocSubitems={setAllocSubitems}/>}
         {tab==="relatorio"&& <RelTab report={report} date={date} setDate={setDate} projects={projects} cont={cont} normA={normA} team={team} weights={weights} assignedCnt={assignedCnt} colorMap={colorMap} genMsg={genMsg} aiLoad={aiLoad} aiMsg={aiMsg} history={history} exportExcel={exportExcel} exportPDF={exportPDF}/>}
         {tab==="projetos" && <ProjTab projects={projects} cont={cont} saveProjects={saveProjects} saveCont={saveCont} colorMap={colorMap} diary={diary} saveDiary={saveDiary} team={team} history={history}/>}
@@ -542,7 +542,7 @@ export default function App(){
 }
 
 function DashTab(props){
-  var report=props.report,teamLoad=props.teamLoad,projects=props.projects,cont=props.cont,team=props.team,history=props.history,colorMap=props.colorMap,weights=props.weights;
+  var report=props.report,teamLoad=props.teamLoad,projects=props.projects,cont=props.cont,team=props.team,history=props.history,colorMap=props.colorMap,weights=props.weights,tarefas=props.tarefas||[];
   var active=projects.filter(function(p){return p.status==="ativo";}).length;
   var blocked=projects.filter(function(p){return p.status==="bloqueado";}).length;
   var waiting=projects.filter(function(p){return p.status==="aguardando";}).length;
@@ -555,6 +555,21 @@ function DashTab(props){
     {name:"Aguardando",value:waiting,fill:STATUS.aguardando.hex},
     {name:"Concluidos",value:done,fill:STATUS.concluido.hex},
   ].filter(function(d){return d.value>0;});
+  var tPendente=tarefas.filter(function(t){return t.status==="pendente";}).length;
+  var tEmAnd=tarefas.filter(function(t){return t.status==="em_andamento";}).length;
+  var tPausado=tarefas.filter(function(t){return t.status==="pausado";}).length;
+  var tConc=tarefas.filter(function(t){return t.status==="concluido";}).length;
+  var tarefasPie=[
+    {name:"Pendentes",value:tPendente,fill:"#d97706"},
+    {name:"Em andamento",value:tEmAnd,fill:"#15803d"},
+    {name:"Pausadas",value:tPausado,fill:"#dc2626"},
+    {name:"Concluídas",value:tConc,fill:"#6b7280"},
+  ].filter(function(d){return d.value>0;});
+  var membroTarefas=team.map(function(m){
+    var ativas=tarefas.filter(function(t){return t.membroId===m.id&&t.status!=="concluido";}).length;
+    var conc=tarefas.filter(function(t){return t.membroId===m.id&&t.status==="concluido";}).length;
+    return {name:m.name,ativas:ativas,conc:conc};
+  }).filter(function(m){return m.ativas+m.conc>0;}).sort(function(a,b){return b.ativas-a.ativas;});
 
   async function exportPNG(){
     var el=document.getElementById("dashboard-content");
@@ -626,6 +641,63 @@ function DashTab(props){
                 </div>
               );
             })}
+          </div>
+        )}
+        {tarefas.length>0&&(
+          <div style={Object.assign({},B.card,{marginBottom:"1rem"})}>
+            <div style={B.lbl}>Status das tarefas</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"8px",marginBottom:"1rem"}}>
+              {[
+                {label:"Pendentes",value:tPendente,color:"#92400e",bg:"#fef9c3"},
+                {label:"Em andamento",value:tEmAnd,color:"#15803d",bg:"#dcfce7"},
+                {label:"Pausadas",value:tPausado,color:"#dc2626",bg:"#fee2e2"},
+                {label:"Concluídas",value:tConc,color:"#6b7280",bg:"#f3f4f6"},
+              ].map(function(item){
+                return (
+                  <div key={item.label} style={{background:item.bg,borderRadius:"8px",padding:"10px 8px",textAlign:"center"}}>
+                    <div style={{fontSize:"9px",fontWeight:700,textTransform:"uppercase",letterSpacing:".07em",color:item.color,marginBottom:"4px"}}>{item.label}</div>
+                    <div style={{fontSize:"26px",fontWeight:800,color:item.color}}>{item.value}</div>
+                  </div>
+                );
+              })}
+            </div>
+            {tarefasPie.length>0&&(
+              <div style={{display:"flex",alignItems:"center",gap:"20px"}}>
+                <PieChart width={120} height={120}>
+                  <Pie data={tarefasPie} cx={55} cy={55} innerRadius={28} outerRadius={52} dataKey="value" paddingAngle={3}>
+                    {tarefasPie.map(function(e,i){return <Cell key={i} fill={e.fill}/>;}) }
+                  </Pie>
+                  <Tooltip formatter={function(v,n){return [v+" tarefa"+(v!==1?"s":""),n];}} contentStyle={{fontSize:11,borderRadius:6}}/>
+                </PieChart>
+                <div style={{flex:1}}>
+                  {tarefasPie.map(function(s){
+                    return (
+                      <div key={s.name} style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"7px"}}>
+                        <div style={{width:"10px",height:"10px",borderRadius:"2px",background:s.fill,flexShrink:0}}/>
+                        <span style={{fontSize:"12px",color:"#6b7280",flex:1}}>{s.name}</span>
+                        <span style={{fontSize:"14px",fontWeight:700,color:"#111"}}>{s.value}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {membroTarefas.length>0&&(
+              <div style={{marginTop:"1rem",borderTop:"1px solid #f0f0f0",paddingTop:"1rem"}}>
+                <div style={{fontSize:"10px",fontWeight:700,textTransform:"uppercase",letterSpacing:".07em",color:"#9ca3af",marginBottom:"8px"}}>Por colaborador</div>
+                {membroTarefas.map(function(m){
+                  return (
+                    <div key={m.name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #f9fafb"}}>
+                      <span style={{fontSize:"13px",color:"#374151",fontWeight:500}}>{m.name}</span>
+                      <div style={{display:"flex",gap:"6px"}}>
+                        {m.ativas>0&&<span style={{fontSize:"11px",padding:"2px 9px",borderRadius:"20px",background:"#dbeafe",color:"#2563EB",fontWeight:600}}>{m.ativas} ativa{m.ativas!==1?"s":""}</span>}
+                        {m.conc>0&&<span style={{fontSize:"11px",padding:"2px 9px",borderRadius:"20px",background:"#f3f4f6",color:"#6b7280",fontWeight:600}}>{m.conc} concluída{m.conc!==1?"s":""}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
         {statusPie.length>0&&(
