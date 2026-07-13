@@ -45,9 +45,9 @@ const STATUS = {
 };
 const ROLE_COLOR={Socio:"#111",Coordenador:"#7C3AED",Arquiteto:"#2563EB",Estagiario:"#059669",Parceiro:"#D97706"};
 const UFS=["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
-const SHIFTS={manha:"Manhã",tarde:"Tarde",integral:"Integral"};
-const SHIFT_COLORS={manha:"#2563EB",tarde:"#D97706",integral:"#7C3AED"};
-const SHIFT_BG={manha:"#eff6ff",tarde:"#fffbeb",integral:"#f5f3ff"};
+const SHIFTS={falta:"Falta",manha:"Manhã",tarde:"Tarde",integral:"Integral"};
+const SHIFT_COLORS={falta:"#dc2626",manha:"#2563EB",tarde:"#D97706",integral:"#7C3AED"};
+const SHIFT_BG={falta:"#fee2e2",manha:"#eff6ff",tarde:"#fffbeb",integral:"#f5f3ff"};
 const MONTH_PT=["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
 const INIT_C=[
@@ -384,7 +384,7 @@ export default function App(){
   }
 
   async function saveAlloc(){
-    var snap=tarefas.filter(function(t){return t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(date));}).map(function(t){return {id:t.id,membroNome:t.membroNome,projetoNome:t.projetoNome,atividadeNome:t.atividadeNome||"",descricao:t.descricao,status:t.status};});
+    var snap=tarefas.filter(function(t){return t.status!=="pendente"&&(t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(date)));}).map(function(t){return {id:t.id,membroNome:t.membroNome,projetoId:t.projetoId||"",projetoNome:t.projetoNome,atividadeNome:t.atividadeNome||"",descricao:t.descricao,status:t.status,iniciadoEm:t.iniciadoEm||null,concluidoEm:t.concluidoEm||null,delegadoHistorico:t.delegadoHistorico||[],atribuidoPor:t.atribuidoPor||""};});
     var entry={alloc:normA,allocSubitems:allocSubitems,savedAt:new Date().toISOString(),tarefasSnap:snap};
     await persist("history",{[date]:entry});
     setFlash("Salvo!");setTimeout(function(){setFlash("");},1800);
@@ -398,7 +398,7 @@ export default function App(){
   function saveTarefas(t){
     setTarefas(t);
     persist("tarefas",t);
-    var snap=t.filter(function(x){return x.status!=="concluido"||(x.concluidoEm&&x.concluidoEm.startsWith(TODAY));}).map(function(x){return {id:x.id,membroNome:x.membroNome,projetoNome:x.projetoNome,atividadeNome:x.atividadeNome||"",descricao:x.descricao,status:x.status};});
+    var snap=t.filter(function(x){return x.status!=="pendente"&&(x.status!=="concluido"||(x.concluidoEm&&x.concluidoEm.startsWith(TODAY)));}).map(function(x){return {id:x.id,membroNome:x.membroNome,projetoId:x.projetoId||"",projetoNome:x.projetoNome,atividadeNome:x.atividadeNome||"",descricao:x.descricao,status:x.status,iniciadoEm:x.iniciadoEm||null,concluidoEm:x.concluidoEm||null,delegadoHistorico:x.delegadoHistorico||[],atribuidoPor:x.atribuidoPor||""};});
     persist("history",{[TODAY]:Object.assign({},history[TODAY]||{},{tarefasSnap:snap})});
   }
 
@@ -535,7 +535,7 @@ export default function App(){
         {tab==="tarefas"    && <TarefasTab tarefas={tarefas} saveTarefas={saveTarefas} team={team} projects={projects} authUser={authUser}/>}
       </div>
       <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>
-        Criado por MAR Consultoria 2026 - v2.0
+        Criado por MAR Consultoria 2026 - v2.1
       </div>
     </div>
   );
@@ -1667,7 +1667,7 @@ function PlanTab(props){
                 var isToday=date===TODAY;
                 var isSel=date===selDate;
                 var entries=planning[date]||{};
-                var assigned=Object.keys(entries).filter(function(mid){return entries[mid]&&entries[mid].shift;});
+                var assigned=Object.keys(entries).filter(function(mid){return entries[mid]&&entries[mid].shift&&entries[mid].shift!=="falta";});
                 return (
                   <div key={date} onClick={function(){setSelDate(isSel?null:date);}} style={{minHeight:"62px",background:isSel?"#fef2f2":isToday?"#fff7ed":"#fff",borderRadius:"6px",border:"1px solid "+(isSel?RED:isToday?"#fed7aa":"#e5e7eb"),cursor:"pointer",padding:"6px",boxSizing:"border-box"}}>
                     <div style={{fontSize:"12px",fontWeight:isToday?700:500,color:isToday?RED:"#374151",marginBottom:"3px"}}>{parseInt(date.slice(-2))}</div>
@@ -1776,6 +1776,8 @@ function TarefasTab(props){
   var ds=useState(""); var desc=ds[0],setDesc=ds[1];
   var errs=useState(""); var err=errs[0],setErr=errs[1];
   var dels=useState(null); var delegando=dels[0],setDelegando=dels[1];
+  var fcps=useState(""); var fConcPessoa=fcps[0],setFConcPessoa=fcps[1];
+  var fcprs=useState(""); var fConcProj=fcprs[0],setFConcProj=fcprs[1];
   var projSel=projects.find(function(p){return p.id===projeto;});
   var subitens=(projSel&&projSel.subitems)||[];
 
@@ -1874,14 +1876,35 @@ function TarefasTab(props){
             Concluídas ({concluidas.length}) ▾
           </div>
           <div id="conc-list" style={{display:"none"}}>
-            {concluidas.map(function(t){
+            <div style={{display:"flex",gap:"8px",marginBottom:"10px",marginTop:"8px"}}>
+              <select value={fConcProj} onChange={function(e){setFConcProj(e.target.value);}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px"})}>
+                <option value="">Todos os projetos</option>
+                {[...new Set(concluidas.map(function(t){return t.projetoNome;}))].map(function(p){return <option key={p} value={p}>{p}</option>;}) }
+              </select>
+              <select value={fConcPessoa} onChange={function(e){setFConcPessoa(e.target.value);}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px"})}>
+                <option value="">Todas as pessoas</option>
+                {[...new Set(concluidas.map(function(t){return t.membroNome;}))].map(function(p){return <option key={p} value={p}>{p}</option>;}) }
+              </select>
+            </div>
+            {concluidas.filter(function(t){return(!fConcProj||t.projetoNome===fConcProj)&&(!fConcPessoa||t.membroNome===fConcPessoa);}).map(function(t){
+              var pessoas=[...(t.delegadoHistorico||[]).map(function(d){return d.de;}),t.membroNome].filter(function(v,idx,a){return a.indexOf(v)===idx;});
               return (
-                <div key={t.id} style={Object.assign({},B.card,{display:"flex",alignItems:"center",gap:"12px",opacity:.55,flexWrap:"wrap"})}>
-                  <div style={{fontWeight:700,fontSize:"14px",color:"#111",minWidth:"80px",flexShrink:0}}>{t.membroNome}</div>
-                  <div style={{fontSize:"13px",color:"#9ca3af",flexShrink:0,minWidth:"130px"}}>{t.projetoNome}</div>
-                  <div style={{fontSize:"13px",color:"#374151",flex:1}}>{t.descricao}</div>
-                  <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:"#f3f4f6",color:"#6b7280",flexShrink:0}}>Concluído</span>
-                  <button onClick={function(){saveTarefas(tarefas.filter(function(x){return x.id!==t.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",flexShrink:0,lineHeight:1})}>×</button>
+                <div key={t.id} style={Object.assign({},B.card,{padding:"10px 14px"})}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:"6px"}}>
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"4px",flexWrap:"wrap"}}>
+                        <span style={{fontWeight:700,fontSize:"13px",color:"#111"}}>{pessoas.join(" → ")}</span>
+                        <span style={{fontSize:"10px",fontWeight:600,padding:"2px 8px",borderRadius:"20px",background:"#f3f4f6",color:"#6b7280"}}>Concluído</span>
+                      </div>
+                      <div style={{fontSize:"12px",color:"#9ca3af",marginBottom:"6px"}}>{t.projetoNome}{t.atividadeNome?" · "+t.atividadeNome:""}{t.descricao?" — "+t.descricao:""}</div>
+                      <div style={{display:"flex",gap:"14px",flexWrap:"wrap"}}>
+                        {t.iniciadoEm&&<span style={{fontSize:"11px",color:"#6b7280"}}>▶ Início: {new Date(t.iniciadoEm).toLocaleDateString("pt-BR")}</span>}
+                        {t.concluidoEm&&<span style={{fontSize:"11px",color:"#15803d",fontWeight:600}}>✓ Conclusão: {new Date(t.concluidoEm).toLocaleDateString("pt-BR")}</span>}
+                        {(t.delegadoHistorico||[]).map(function(h,hi){return <span key={hi} style={{fontSize:"11px",color:"#9ca3af"}}>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</span>;})}
+                      </div>
+                    </div>
+                    <button onClick={function(){saveTarefas(tarefas.filter(function(x){return x.id!==t.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",lineHeight:1,flexShrink:0})}>×</button>
+                  </div>
                 </div>
               );
             })}
@@ -1897,6 +1920,7 @@ function UsuarioApp(props){
   var ts=useState("minhas"); var tab=ts[0],setTab=ts[1];
   var sms=useState(false); var senhaMode=sms[0],setSenhaMode=sms[1];
   var udels=useState(null); var uDelegando=udels[0],setUDelegando=udels[1];
+  var ucfp=useState(""); var uConcFiltProj=ucfp[0],setUConcFiltProj=ucfp[1];
   var sas=useState(""); var senhaAtual=sas[0],setSenhaAtual=sas[1];
   var sns=useState(""); var senhaNova=sns[0],setSenhaNova=sns[1];
   var scs=useState(""); var senhaConf=scs[0],setSenhaConf=scs[1];
@@ -2084,15 +2108,26 @@ function UsuarioApp(props){
                   Concluídas ({concluidas.length}) ▾
                 </div>
                 <div id="u-conc" style={{display:"none"}}>
-                  {concluidas.map(function(t){
+                  <select value={uConcFiltProj} onChange={function(e){setUConcFiltProj(e.target.value);}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px",marginBottom:"8px"})}>
+                    <option value="">Todos os projetos</option>
+                    {[...new Set(concluidas.map(function(t){return t.projetoNome;}))].map(function(p){return <option key={p} value={p}>{p}</option>;}) }
+                  </select>
+                  {concluidas.filter(function(t){return !uConcFiltProj||t.projetoNome===uConcFiltProj;}).map(function(t){
+                    var pessoas=[...(t.delegadoHistorico||[]).map(function(d){return d.de;}),t.membroNome].filter(function(v,idx,a){return a.indexOf(v)===idx;});
                     return (
-                      <div key={t.id} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"8px",opacity:.6}}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                          <div>
-                            <div style={{fontSize:"14px",fontWeight:700,color:"#111",marginBottom:"2px"}}>{t.projetoNome}</div>
-                            <div style={{fontSize:"13px",color:"#9ca3af"}}>{t.descricao}</div>
+                      <div key={t.id} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"8px"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"6px"}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:"14px",fontWeight:700,color:"#111",marginBottom:"2px"}}>{t.projetoNome}{t.atividadeNome?" — "+t.atividadeNome:""}</div>
+                            <div style={{fontSize:"12px",color:"#9ca3af"}}>{t.descricao}</div>
+                            {pessoas.length>1&&<div style={{fontSize:"11px",color:"#6b7280",marginTop:"4px"}}>Envolvidos: {pessoas.join(" → ")}</div>}
                           </div>
-                          <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:"#f3f4f6",color:"#6b7280",marginLeft:"8px"}}>Concluído</span>
+                          <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:"#f3f4f6",color:"#6b7280",marginLeft:"8px",flexShrink:0}}>Concluído</span>
+                        </div>
+                        <div style={{display:"flex",gap:"14px",flexWrap:"wrap"}}>
+                          {t.iniciadoEm&&<span style={{fontSize:"11px",color:"#6b7280"}}>▶ Início: {new Date(t.iniciadoEm).toLocaleDateString("pt-BR")}</span>}
+                          {t.concluidoEm&&<span style={{fontSize:"11px",color:"#15803d",fontWeight:600}}>✓ Conclusão: {new Date(t.concluidoEm).toLocaleDateString("pt-BR")}</span>}
+                          {(t.delegadoHistorico||[]).map(function(h,hi){return <span key={hi} style={{fontSize:"11px",color:"#9ca3af"}}>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</span>;})}
                         </div>
                       </div>
                     );
@@ -2108,7 +2143,7 @@ function UsuarioApp(props){
         )}
       </div>
       <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>
-        Criado por MAR Consultoria 2026 - v2.0
+        Criado por MAR Consultoria 2026 - v2.1
       </div>
     </div>
   );
@@ -2372,24 +2407,33 @@ function GestorApp(props){
               <div style={{marginTop:"1.25rem",borderTop:"1px solid #f0f0f0",paddingTop:"1rem"}}>
                 <div style={Object.assign({},B.lbl,{cursor:"pointer"})} onClick={function(){var el=document.getElementById("g-conc");if(el)el.style.display=el.style.display==="none"?"block":"none";}}>Concluídas ({mConcluidas.length}) ▾</div>
                 <div id="g-conc" style={{display:"none"}}>
-                  {mConcluidas.map(function(t){return(
-                    <div key={t.id} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"8px",opacity:.6}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
-                        <div>
-                          <div style={{fontSize:"14px",fontWeight:700,color:"#111",marginBottom:"2px"}}>{t.projetoNome}</div>
-                          <div style={{fontSize:"13px",color:"#9ca3af"}}>{t.descricao}</div>
+                  {mConcluidas.map(function(t){
+                    var pessoas=[...(t.delegadoHistorico||[]).map(function(d){return d.de;}),t.membroNome].filter(function(v,idx,a){return a.indexOf(v)===idx;});
+                    return(
+                      <div key={t.id} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"12px",padding:"1rem 1.25rem",marginBottom:"8px"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"6px"}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:"14px",fontWeight:700,color:"#111",marginBottom:"2px"}}>{t.projetoNome}{t.atividadeNome?" — "+t.atividadeNome:""}</div>
+                            <div style={{fontSize:"12px",color:"#9ca3af"}}>{t.descricao}</div>
+                            {pessoas.length>1&&<div style={{fontSize:"11px",color:"#6b7280",marginTop:"3px"}}>Envolvidos: {pessoas.join(" → ")}</div>}
+                          </div>
+                          <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:"#f3f4f6",color:"#6b7280",marginLeft:"8px",flexShrink:0}}>Concluído</span>
                         </div>
-                        <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:"#f3f4f6",color:"#6b7280",marginLeft:"8px"}}>Concluído</span>
+                        <div style={{display:"flex",gap:"14px",flexWrap:"wrap"}}>
+                          {t.iniciadoEm&&<span style={{fontSize:"11px",color:"#6b7280"}}>▶ Início: {new Date(t.iniciadoEm).toLocaleDateString("pt-BR")}</span>}
+                          {t.concluidoEm&&<span style={{fontSize:"11px",color:"#15803d",fontWeight:600}}>✓ Conclusão: {new Date(t.concluidoEm).toLocaleDateString("pt-BR")}</span>}
+                          {(t.delegadoHistorico||[]).map(function(h,hi){return <span key={hi} style={{fontSize:"11px",color:"#9ca3af"}}>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</span>;})}
+                        </div>
                       </div>
-                    </div>
-                  );})}
+                    );
+                  })}
                 </div>
               </div>
             )}
           </div>
         )}
       </div>
-      <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>Criado por MAR Consultoria 2026 - v2.0</div>
+      <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>Criado por MAR Consultoria 2026 - v2.1</div>
     </div>
   );
 }
@@ -2399,6 +2443,8 @@ function HistTab(props){
   var ss=useState(null); var sel=ss[0],setSel=ss[1];
   var es=useState({}); var expanded=es[0],setExpanded=es[1];
   var ns=useState({}); var notes=ns[0],setNotes=ns[1];
+  var fps=useState(""); var fPessoa=fps[0],setFPessoa=fps[1];
+  var fprjs=useState(""); var fProjHist=fprjs[0],setFProjHist=fprjs[1];
   var dates=Object.keys(history).sort(function(a,b){return b.localeCompare(a);});
   function toggleExpand(d){setExpanded(function(p){return Object.assign({},p,{[d]:!p[d]});});}
   function saveNote(d){
@@ -2408,7 +2454,7 @@ function HistTab(props){
   if(!dates.length)return <div style={{textAlign:"center",padding:"3rem",color:"#9ca3af"}}>Nenhum historico salvo ainda.</div>;
   if(sel){
     var rep=calcReport(history[sel]?history[sel].alloc||{}:{},team,projects,{});
-    var tarefasDia=sel===TODAY?tarefas.filter(function(t){return t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(TODAY));}):((history[sel]&&history[sel].tarefasSnap)||[]);
+    var tarefasDia=(sel===TODAY?tarefas.filter(function(t){return t.status!=="pendente"&&(t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(TODAY)));}):((history[sel]&&history[sel].tarefasSnap)||[]).filter(function(t){return t.status!=="pendente";}));
     return (
       <div>
         <button onClick={function(){setSel(null);}} style={Object.assign({},B.ghost,{color:RED,padding:0,fontWeight:600,fontSize:"13px",marginBottom:"1rem"})}>Voltar</button>
@@ -2441,13 +2487,35 @@ function HistTab(props){
         {tarefasDia.length>0&&(
           <div style={{marginTop:"1.5rem",borderTop:"1px solid #f0f0f0",paddingTop:"1rem"}}>
             <div style={B.lbl}>Tarefas do dia</div>
-            {tarefasDia.map(function(t,i){
+            <div style={{display:"flex",gap:"8px",marginBottom:"10px"}}>
+              <select value={fProjHist} onChange={function(e){setFProjHist(e.target.value);}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px"})}>
+                <option value="">Todos os projetos</option>
+                {[...new Set(tarefasDia.map(function(t){return t.projetoNome;}))].map(function(p){return <option key={p} value={p}>{p}</option>;}) }
+              </select>
+              <select value={fPessoa} onChange={function(e){setFPessoa(e.target.value);}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px"})}>
+                <option value="">Todas as pessoas</option>
+                {[...new Set(tarefasDia.map(function(t){return t.membroNome;}))].map(function(p){return <option key={p} value={p}>{p}</option>;}) }
+              </select>
+            </div>
+            {tarefasDia.filter(function(t){return(!fPessoa||t.membroNome===fPessoa)&&(!fProjHist||t.projetoNome===fProjHist);}).map(function(t,i){
               var st=TASK_ST[t.status]||TASK_ST.pendente;
+              var pessoas=[...(t.delegadoHistorico||[]).map(function(d){return d.de;}),t.membroNome].filter(function(v,idx,a){return a.indexOf(v)===idx;});
               return (
-                <div key={t.id||i} style={Object.assign({},B.card,{display:"flex",alignItems:"center",gap:"10px",flexWrap:"wrap",padding:"8px 12px"})}>
-                  <div style={{fontWeight:700,fontSize:"13px",color:"#111",minWidth:"80px",flexShrink:0}}>{t.membroNome}</div>
-                  <div style={{fontSize:"12px",color:"#9ca3af",flex:1}}>{t.projetoNome}{t.atividadeNome?" · "+t.atividadeNome:""}{t.descricao?" — "+t.descricao:""}</div>
-                  <span style={{fontSize:"10px",fontWeight:600,padding:"2px 8px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0}}>{st.label}</span>
+                <div key={t.id||i} style={Object.assign({},B.card,{padding:"10px 14px"})}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:"10px",flexWrap:"wrap"}}>
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"4px",flexWrap:"wrap"}}>
+                        <span style={{fontWeight:700,fontSize:"13px",color:"#111"}}>{pessoas.join(" → ")}</span>
+                        <span style={{fontSize:"10px",fontWeight:600,padding:"2px 8px",borderRadius:"20px",background:st.bg,color:st.color}}>{st.label}</span>
+                      </div>
+                      <div style={{fontSize:"12px",color:"#9ca3af"}}>{t.projetoNome}{t.atividadeNome?" · "+t.atividadeNome:""}{t.descricao?" — "+t.descricao:""}</div>
+                      <div style={{display:"flex",gap:"14px",marginTop:"5px",flexWrap:"wrap"}}>
+                        {t.iniciadoEm&&<span style={{fontSize:"11px",color:"#6b7280"}}>▶ Início: {new Date(t.iniciadoEm).toLocaleDateString("pt-BR")}</span>}
+                        {t.concluidoEm&&<span style={{fontSize:"11px",color:"#15803d",fontWeight:600}}>✓ Conclusão: {new Date(t.concluidoEm).toLocaleDateString("pt-BR")}</span>}
+                        {(t.delegadoHistorico||[]).map(function(h,hi){return <span key={hi} style={{fontSize:"11px",color:"#9ca3af"}}>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</span>;})}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               );
             })}
