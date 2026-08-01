@@ -543,7 +543,7 @@ export default function App(){
         {tab==="equipe"   && <EquipeTab team={team} saveTeam={saveTeam} weights={weights} saveWeights={saveWeights}/>}
         {tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap} saveHistory={function(h){setHistory(h);persist("history",h);}} tarefas={tarefas}/>}
         {tab==="planejamento"&& <PlanTab team={team} planning={planning} savePlanning={savePlanning}/>}
-        {tab==="tarefas"    && <TarefasTab tarefas={tarefas} saveTarefas={saveTarefas} team={team} projects={projects} authUser={authUser}/>}
+        {tab==="tarefas"    && <TarefasTab tarefas={tarefas} saveTarefas={saveTarefas} team={team} projects={projects} authUser={authUser} currentMember={memberByEmail}/>}
       </div>
       <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>
         Criado por MAR Consultoria 2026 - v2.1
@@ -1780,7 +1780,7 @@ var TASK_ST={
 };
 
 function TarefasTab(props){
-  var tarefas=props.tarefas,saveTarefas=props.saveTarefas,team=props.team,projects=props.projects,authUser=props.authUser;
+  var tarefas=props.tarefas,saveTarefas=props.saveTarefas,team=props.team,projects=props.projects,authUser=props.authUser,currentMember=props.currentMember;
   var ps=useState(""); var pessoa=ps[0],setPessoa=ps[1];
   var prs=useState(""); var projeto=prs[0],setProjeto=prs[1];
   var ats=useState(""); var atividade=ats[0],setAtividade=ats[1];
@@ -1804,6 +1804,26 @@ function TarefasTab(props){
     var nova={id:uid(),membroId:pessoa,membroNome:membro?membro.name:"",projetoId:projeto,projetoNome:proj?proj.name:"",atividadeId:atividade||null,atividadeNome:atNome,descricao:desc.trim(),status:"pendente",lida:false,criadoEm:new Date().toISOString(),atribuidoPor:adminNome,criadoPorEmail:authUser?authUser.email:"",iniciadoEm:null,pausadoEm:null,concluidoEm:null};
     saveTarefas([...tarefas,nova]);
     setPessoa("");setProjeto("");setAtividade("");setDesc("");
+  }
+
+  function changeStatus(taskId,newStatus){
+    var now=new Date().toISOString();
+    saveTarefas(tarefas.map(function(t){
+      if(t.id!==taskId)return t;
+      return Object.assign({},t,{
+        status:newStatus,
+        iniciadoEm:newStatus==="em_andamento"&&!t.iniciadoEm?now:t.iniciadoEm,
+        pausadoEm:newStatus==="pausado"?now:t.pausadoEm,
+        concluidoEm:newStatus==="concluido"?now:t.concluidoEm,
+      });
+    }));
+  }
+
+  function getActions(status){
+    if(status==="pendente")    return [{label:"Iniciar",icon:"▷",next:"em_andamento"}];
+    if(status==="em_andamento")return [{label:"Pausar",icon:"⏸",next:"pausado"},{label:"Concluir",icon:"✓",next:"concluido"}];
+    if(status==="pausado")     return [{label:"Retomar",icon:"▷",next:"em_andamento"},{label:"Concluir",icon:"✓",next:"concluido"}];
+    return [];
   }
 
   var ativas=tarefas.filter(function(t){return t.status!=="concluido";});
@@ -1856,6 +1876,8 @@ function TarefasTab(props){
         ativasFiltradas.map(function(t){
           var st=TASK_ST[t.status]||TASK_ST.pendente;
           var isDel=delegando&&delegando.taskId===t.id;
+          var isOwn=!!(currentMember&&t.membroId===currentMember.id);
+          var acts=isOwn?getActions(t.status):[];
           return (
             <div key={t.id} style={Object.assign({},B.card,{padding:"10px 14px"})}>
               <div style={{display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap"}}>
@@ -1885,6 +1907,11 @@ function TarefasTab(props){
                 )}
                 <button onClick={function(){if(window.confirm("Remover tarefa?"))saveTarefas(tarefas.filter(function(x){return x.id!==t.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",flexShrink:0,lineHeight:1})}>×</button>
               </div>
+              {acts.length>0&&(
+                <div style={{display:"grid",gridTemplateColumns:"repeat("+acts.length+",1fr)",gap:"6px",marginTop:"8px"}}>
+                  {acts.map(function(a){return <button key={a.next} onClick={function(){changeStatus(t.id,a.next);}} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"7px",padding:"7px",fontSize:"12px",color:"#374151",cursor:"pointer",textAlign:"center",fontWeight:500}}>{a.icon} {a.label}</button>;})}
+                </div>
+              )}
               {t.delegadoHistorico&&t.delegadoHistorico.length>0&&(
                 <div style={{marginTop:"6px",paddingTop:"6px",borderTop:"1px solid #f0f0f0",fontSize:"11px",color:"#9ca3af"}}>
                   {t.delegadoHistorico.map(function(h,i){return <span key={i} style={{marginRight:"10px"}}>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</span>;})}
