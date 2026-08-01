@@ -385,7 +385,7 @@ export default function App(){
 
   async function saveAlloc(){
     var snap=tarefas.filter(function(t){return t.status!=="pendente"&&(t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(date)));}).map(function(t){return {id:t.id,membroNome:t.membroNome,projetoId:t.projetoId||"",projetoNome:t.projetoNome,atividadeNome:t.atividadeNome||"",descricao:t.descricao,status:t.status,iniciadoEm:t.iniciadoEm||null,concluidoEm:t.concluidoEm||null,delegadoHistorico:t.delegadoHistorico||[],atribuidoPor:t.atribuidoPor||""};});
-    var entry={alloc:normA,allocSubitems:allocSubitems,savedAt:new Date().toISOString(),tarefasSnap:snap};
+    var entry=Object.assign({},history[date]||{},{alloc:normA,allocSubitems:allocSubitems,savedAt:new Date().toISOString(),tarefasSnap:snap});
     await persist("history",{[date]:entry});
     setFlash("Salvo!");setTimeout(function(){setFlash("");},1800);
   }
