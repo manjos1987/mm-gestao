@@ -364,12 +364,6 @@ export default function App(){
   var savedDate=!!(history[date]&&history[date].savedAt);
   var assignedCnt=team.filter(function(m){return (normA[m.id]||[]).length>0;}).length;
 
-  function toggleProj(mid,pid){
-    var curr=normA[mid]||[];
-    var next=curr.includes(pid)?curr.filter(function(p){return p!==pid;}):[...curr,pid];
-    setAlloc(Object.assign({},normA,{[mid]:next}));
-  }
-
   async function persist(key,value){
     if(!dbRef.current)return;
     setSyncing(true);
@@ -383,10 +377,27 @@ export default function App(){
     setSyncing(false);
   }
 
-  async function saveAlloc(){
+  function persistAlloc(a,subs){
     var snap=tarefas.filter(function(t){return t.status!=="pendente"&&(t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(date)));}).map(function(t){return {id:t.id,membroNome:t.membroNome,projetoId:t.projetoId||"",projetoNome:t.projetoNome,atividadeNome:t.atividadeNome||"",descricao:t.descricao,status:t.status,iniciadoEm:t.iniciadoEm||null,concluidoEm:t.concluidoEm||null,delegadoHistorico:t.delegadoHistorico||[],atribuidoPor:t.atribuidoPor||""};});
-    var entry=Object.assign({},history[date]||{},{alloc:normA,allocSubitems:allocSubitems,savedAt:new Date().toISOString(),tarefasSnap:snap});
-    await persist("history",{[date]:entry});
+    var entry=Object.assign({},history[date]||{},{alloc:a,allocSubitems:subs,savedAt:new Date().toISOString(),tarefasSnap:snap});
+    return persist("history",{[date]:entry});
+  }
+
+  function toggleProj(mid,pid){
+    var curr=normA[mid]||[];
+    var next=curr.includes(pid)?curr.filter(function(p){return p!==pid;}):[...curr,pid];
+    var nextAlloc=Object.assign({},normA,{[mid]:next});
+    setAlloc(nextAlloc);
+    persistAlloc(nextAlloc,allocSubitems);
+  }
+
+  function updateAllocSubitems(next){
+    setAllocSubitems(next);
+    persistAlloc(normA,next);
+  }
+
+  async function saveAlloc(){
+    await persistAlloc(normA,allocSubitems);
     setFlash("Salvo!");setTimeout(function(){setFlash("");},1800);
   }
   function saveCont(c){setCont(c);persist("cont",c);}
@@ -526,7 +537,7 @@ export default function App(){
       </div>
       <div style={{padding:"1.25rem",maxWidth:"800px",margin:"0 auto"}}>
         {tab==="visao"    && <DashTab report={report} teamLoad={teamLoad} projects={projects} cont={cont} team={team} history={history} colorMap={colorMap} weights={weights} tarefas={tarefas}/>}
-        {tab==="hoje"     && <HojeTab team={team} projects={projects} cont={cont} normA={normA} colorMap={colorMap} toggleProj={toggleProj} date={date} setDate={setDate} savedDate={savedDate} assignedCnt={assignedCnt} saveAlloc={saveAlloc} flash={flash} report={report} allocSubitems={allocSubitems} setAllocSubitems={setAllocSubitems}/>}
+        {tab==="hoje"     && <HojeTab team={team} projects={projects} cont={cont} normA={normA} colorMap={colorMap} toggleProj={toggleProj} date={date} setDate={setDate} savedDate={savedDate} assignedCnt={assignedCnt} saveAlloc={saveAlloc} flash={flash} report={report} allocSubitems={allocSubitems} setAllocSubitems={updateAllocSubitems}/>}
         {tab==="relatorio"&& <RelTab report={report} date={date} setDate={setDate} projects={projects} cont={cont} normA={normA} team={team} weights={weights} assignedCnt={assignedCnt} colorMap={colorMap} genMsg={genMsg} aiLoad={aiLoad} aiMsg={aiMsg} history={history} exportExcel={exportExcel} exportPDF={exportPDF}/>}
         {tab==="projetos" && <ProjTab projects={projects} cont={cont} saveProjects={saveProjects} saveCont={saveCont} colorMap={colorMap} diary={diary} saveDiary={saveDiary} team={team} history={history}/>}
         {tab==="equipe"   && <EquipeTab team={team} saveTeam={saveTeam} weights={weights} saveWeights={saveWeights}/>}
