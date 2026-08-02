@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
 import { initializeApp, getApps, getApp, deleteApp } from "firebase/app";
-import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
+import { getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs, getDoc } from "firebase/firestore";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import html2canvas from "html2canvas";
 
@@ -486,6 +486,7 @@ export default function App(){
   var memberByEmail=team.find(function(m){return m.email&&m.email.toLowerCase()===(authUser?authUser.email.toLowerCase():"");});
   var memberAcesso=memberByEmail?memberByEmail.acesso||"usuario":"usuario";
   var isAdmin=!!(authUser&&(ADMIN_EMAILS.includes(authUser.email.toLowerCase())||memberAcesso==="admin"));
+  var isMaster=!!(authUser&&ADMIN_EMAILS.includes(authUser.email.toLowerCase()));
   var isGestor=!!(authUser&&!isAdmin&&memberAcesso==="gestor");
   var currentMember=!isAdmin?memberByEmail:null;
   if(!isAdmin&&isGestor){
@@ -496,7 +497,8 @@ export default function App(){
   }
 
   var TABS=[["visao","Visao Geral"],["hoje","Hoje"],["relatorio","Relatorio"],["projetos","Projetos"],["equipe","Equipe"],["historico","Historico"],["planejamento","Planejamento"],["tarefas","Tarefas"]];
-  var TABS_DISPLAY={"visao":"Visão Geral","hoje":"Hoje","relatorio":"Relatório","projetos":"Projetos","equipe":"Equipe","historico":"Histórico","planejamento":"Planejamento","tarefas":"Tarefas"};
+  if(isMaster)TABS.push(["orcamentos","Orcamentos"]);
+  var TABS_DISPLAY={"visao":"Visão Geral","hoje":"Hoje","relatorio":"Relatório","projetos":"Projetos","equipe":"Equipe","historico":"Histórico","planejamento":"Planejamento","tarefas":"Tarefas","orcamentos":"Orçamentos"};
 
   return (
     <div style={{background:"#f9fafb",minHeight:"100vh",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
@@ -544,6 +546,7 @@ export default function App(){
         {tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap} saveHistory={function(h){setHistory(h);persist("history",h);}} tarefas={tarefas}/>}
         {tab==="planejamento"&& <PlanTab team={team} planning={planning} savePlanning={savePlanning}/>}
         {tab==="tarefas"    && <TarefasTab tarefas={tarefas} saveTarefas={saveTarefas} team={team} projects={projects} authUser={authUser} currentMember={memberByEmail}/>}
+        {tab==="orcamentos" && isMaster && <OrcamentosTab db={dbRef.current} authUser={authUser}/>}
       </div>
       <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>
         Criado por MAR Consultoria 2026 - v2.2
@@ -2666,6 +2669,892 @@ function HistTab(props){
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ==================== Orcamentos & Contratos ==================== */
+
+var ETAPAS_PADRAO=[
+  {titulo:"Levantamento e Programa de Necessidades", atividades:["Levantamento de dados e documentação do terreno","Programa de necessidades do cliente","Análise de legislação e normas aplicáveis"]},
+  {titulo:"Estudo Preliminar", atividades:["Estudo de viabilidade e implantação","Desenvolvimento do estudo preliminar de arquitetura"]},
+  {titulo:"Anteprojeto", atividades:["Desenvolvimento da proposta aprovada","Desenvolvimento de plantas, cortes e fachadas","Compatibilização inicial com projetos complementares"]},
+  {titulo:"Projeto Legal", atividades:["Adequação do projeto às diretrizes da prefeitura","Elaboração de pranchas para aprovação","Protocolo e acompanhamento da aprovação"]},
+  {titulo:"Projeto Executivo", atividades:["Detalhamentos técnicos e construtivos","Compatibilização final entre disciplinas","Documentação completa para execução da obra"]},
+];
+
+var ENTREGAVEIS_OPCOES=["Plantas baixas","Cortes","Fachadas/Elevações","Planta de situação e locação","Detalhamentos construtivos (quando necessário)","Quadro de esquadrias","Quadro de áreas","Imagens de maquete eletrônica ilustrativas","Memorial descritivo","Especificação técnica","Memorial de incorporação","Convenção de condomínio","Projeto de paisagismo","Projetos complementares (conforme escopo contratado)"];
+var ENTREGAVEIS_PADRAO=["Plantas baixas","Cortes","Planta de situação e locação","Quadro de esquadrias","Imagens de maquete eletrônica ilustrativas"];
+
+var ESTADOS_UF=[["AC","Acre"],["AL","Alagoas"],["AP","Amapá"],["AM","Amazonas"],["BA","Bahia"],["CE","Ceará"],["DF","Distrito Federal"],["ES","Espírito Santo"],["GO","Goiás"],["MA","Maranhão"],["MT","Mato Grosso"],["MS","Mato Grosso do Sul"],["MG","Minas Gerais"],["PA","Pará"],["PB","Paraíba"],["PR","Paraná"],["PE","Pernambuco"],["PI","Piauí"],["RJ","Rio de Janeiro"],["RN","Rio Grande do Norte"],["RS","Rio Grande do Sul"],["RO","Rondônia"],["RR","Roraima"],["SC","Santa Catarina"],["SP","São Paulo"],["SE","Sergipe"],["TO","Tocantins"]];
+
+var TIPOLOGIAS={
+  hotel:{label:"Hotel",campos:[
+    {id:"nomeEmp",label:"Nome do empreendimento (opcional)",tipo:"text"},
+    {id:"categoria",label:"Categoria",tipo:"select",opcoes:["Econômico","Standard","Superior","Luxo"]},
+    {id:"numeroUH",label:"Número de unidades habitacionais (quartos)",tipo:"number"},
+    {id:"numeroPav",label:"Número de pavimentos",tipo:"number"},
+    {id:"areaTerreno",label:"Área do terreno (m²)",tipo:"number"},
+    {id:"areaConstruida",label:"Área construída estimada (m²)",tipo:"number"},
+    {id:"lazer",label:"Possui área de lazer / apoio (piscina, restaurante, eventos)?",tipo:"select",opcoes:["Sim","Não"]},
+  ],gerar:function(v,end){return "A proposta engloba o projeto de arquitetura para um hotel"+(v.nomeEmp?" ("+v.nomeEmp+")":"")+" de padrão "+(v.categoria||"[categoria]")+", a ser implantado em "+end+", contemplando "+(v.numeroUH||"[nº]")+" unidades habitacionais distribuídas em "+(v.numeroPav||"[nº]")+" pavimentos, em terreno de aproximadamente "+(v.areaTerreno||"[área]")+" m², com área construída estimada de "+(v.areaConstruida||"[área]")+" m²"+(v.lazer==="Sim"?", incluindo áreas de lazer e infraestrutura de apoio (piscina, salão de eventos, restaurante, etc.)":"")+".";}},
+  resort:{label:"Resort",campos:[
+    {id:"nomeEmp",label:"Nome do empreendimento (opcional)",tipo:"text"},
+    {id:"padrao",label:"Padrão",tipo:"select",opcoes:["Alto padrão","Luxo"]},
+    {id:"numeroUH",label:"Número de unidades habitacionais",tipo:"number"},
+    {id:"areaTerreno",label:"Área do terreno (m²)",tipo:"number"},
+    {id:"equip",label:"Equipamentos de lazer",tipo:"checklist",opcoes:["Piscinas","Spa","Campo de golfe","Marina","Beach club","Kids club","Restaurantes"]},
+  ],gerar:function(v,end){return "A proposta contempla o projeto de arquitetura para um resort"+(v.nomeEmp?" ("+v.nomeEmp+")":"")+" de "+(v.padrao||"[padrão]")+", a ser implantado em "+end+", com "+(v.numeroUH||"[nº]")+" unidades habitacionais em terreno de "+(v.areaTerreno||"[área]")+" m², dotado de "+v.equip+".";}},
+  condh:{label:"Condomínio horizontal",campos:[
+    {id:"areaGleba",label:"Área da gleba (m²)",tipo:"number"},
+    {id:"numeroLotes",label:"Número de lotes/casas",tipo:"number"},
+    {id:"padrao",label:"Padrão",tipo:"select",opcoes:["Alto padrão","Médio padrão","Baixo padrão","MCMV (Minha Casa Minha Vida)"]},
+    {id:"metragemMedia",label:"Metragem média por unidade (m²)",tipo:"number"},
+    {id:"infra",label:"Infraestrutura prevista",tipo:"checklist",opcoes:["Portaria/guarita","Muro/cercamento perimetral","Área de lazer comum","Quadra esportiva","Playground","Rede de drenagem e pavimentação interna"]},
+  ],gerar:function(v,end){return "A proposta engloba o projeto urbanístico e arquitetônico para condomínio horizontal fechado, implantado em "+end+", em gleba de "+(v.areaGleba||"[área]")+" m², contemplando "+(v.numeroLotes||"[nº]")+" unidades residenciais de "+(v.padrao||"[padrão]")+", com metragem média de "+(v.metragemMedia||"[área]")+" m² por unidade, incluindo "+v.infra+".";}},
+  condv:{label:"Condomínio vertical (prédio)",campos:[
+    {id:"numeroTorres",label:"Número de torres",tipo:"number"},
+    {id:"numeroPav",label:"Número de pavimentos por torre",tipo:"number"},
+    {id:"totalUnidades",label:"Total de unidades",tipo:"number"},
+    {id:"areaMedia",label:"Área média por unidade (m²)",tipo:"number"},
+    {id:"padrao",label:"Padrão",tipo:"select",opcoes:["Alto padrão","Médio padrão","Baixo padrão","MCMV (Minha Casa Minha Vida)"]},
+    {id:"vagas",label:"Vagas de garagem por unidade",tipo:"number"},
+    {id:"lazer",label:"Área de lazer",tipo:"checklist",opcoes:["Piscina","Salão de festas","Academia","Playground","Coworking","Rooftop/Sky lounge","Espaço gourmet"]},
+  ],gerar:function(v,end){return "A proposta contempla o projeto de arquitetura para condomínio vertical composto por "+(v.numeroTorres||"[nº]")+" torre(s) de "+(v.numeroPav||"[nº]")+" pavimentos, implantado em "+end+", totalizando "+(v.totalUnidades||"[nº]")+" unidades com área média de "+(v.areaMedia||"[área]")+" m², padrão "+(v.padrao||"[padrão]")+", com "+(v.vagas||"[nº]")+" vaga(s) de garagem por unidade e área de lazer contemplando "+v.lazer+".";}},
+  resunif:{label:"Residência unifamiliar",campos:[
+    {id:"areaTerreno",label:"Área do terreno (m²)",tipo:"number"},
+    {id:"areaConstruida",label:"Área construída (m²)",tipo:"number"},
+    {id:"numeroPav",label:"Número de pavimentos",tipo:"number"},
+    {id:"suites",label:"Número de suítes/quartos",tipo:"number"},
+    {id:"estilo",label:"Padrão / estilo",tipo:"select",opcoes:["Alto padrão","Médio padrão","Contemporâneo","Minimalista","Clássico"]},
+  ],gerar:function(v,end){return "A proposta engloba o projeto de arquitetura para residência unifamiliar, em "+end+", em terreno de "+(v.areaTerreno||"[área]")+" m², com área construída de "+(v.areaConstruida||"[área]")+" m², distribuída em "+(v.numeroPav||"[nº]")+" pavimento(s) e "+(v.suites||"[nº]")+" suíte(s)/quarto(s), em padrão "+(v.estilo||"[padrão]")+".";}},
+  resmulti:{label:"Residência multifamiliar",campos:[
+    {id:"numeroUnidades",label:"Número de unidades",tipo:"number"},
+    {id:"areaPorUnidade",label:"Área por unidade (m²)",tipo:"number"},
+    {id:"areaTerreno",label:"Área do terreno (m²)",tipo:"number"},
+    {id:"padrao",label:"Padrão",tipo:"select",opcoes:["Alto padrão","Médio padrão","Baixo padrão","MCMV (Minha Casa Minha Vida)"]},
+  ],gerar:function(v,end){return "A proposta engloba o projeto de arquitetura para empreendimento residencial multifamiliar, em "+end+", composto por "+(v.numeroUnidades||"[nº]")+" unidades residenciais de "+(v.areaPorUnidade||"[área]")+" m² cada, implantado em terreno de "+(v.areaTerreno||"[área]")+" m², padrão "+(v.padrao||"[padrão]")+".";}},
+  loteamento:{label:"Loteamento",campos:[
+    {id:"areaGleba",label:"Tamanho da gleba (m² ou ha)",tipo:"text"},
+    {id:"numeroLotes",label:"Previsão de número de lotes",tipo:"number"},
+    {id:"tipoLote",label:"Tipo de lote",tipo:"select",opcoes:["Residencial","Comercial","Misto"]},
+    {id:"padraoLote",label:"Padrão do lote",tipo:"select",opcoes:["Alto padrão","Médio padrão","Baixo padrão","MCMV (Minha Casa Minha Vida)"]},
+    {id:"infra",label:"Infraestrutura exigida",tipo:"checklist",opcoes:["Pavimentação asfáltica","Rede de drenagem pluvial","Rede elétrica e iluminação pública","Rede de água e esgoto","Áreas verdes e praças","Muro/portaria de acesso"]},
+    {id:"aprovacao",label:"Necessita aprovação junto à Prefeitura?",tipo:"select",opcoes:["Sim","Não"]},
+  ],gerar:function(v,end){return "A proposta contempla o projeto de parcelamento do solo (loteamento) para gleba de "+(v.areaGleba||"[área]")+", localizada em "+end+", com previsão de "+(v.numeroLotes||"[nº]")+" lotes de uso "+(v.tipoLote||"[tipo]")+", padrão "+(v.padraoLote||"[padrão]")+", incluindo projeto de infraestrutura urbana ("+v.infra+")"+(v.aprovacao==="Sim"?", bem como os documentos necessários para aprovação junto à Prefeitura Municipal":"")+".";}},
+  institucional:{label:"Institucional / Comercial",campos:[
+    {id:"tipoUso",label:"Tipo de uso",tipo:"select",opcoes:["Shopping Center","Escritório/Corporativo","Varejo/Loja","Educacional","Saúde/Hospitalar","Outro"]},
+    {id:"areaTerreno",label:"Área do terreno (m²)",tipo:"number"},
+    {id:"areaConstruida",label:"Área construída (m²)",tipo:"number"},
+    {id:"numeroPav",label:"Número de pavimentos",tipo:"number"},
+    {id:"numeroLojas",label:"Número de lojas/salas (se aplicável)",tipo:"number"},
+  ],gerar:function(v,end){return "A proposta engloba o projeto de arquitetura para empreendimento de uso "+(v.tipoUso||"[uso]")+", em "+end+", em terreno de "+(v.areaTerreno||"[área]")+" m², com área construída de "+(v.areaConstruida||"[área]")+" m² distribuída em "+(v.numeroPav||"[nº]")+" pavimento(s)"+(v.numeroLojas?", contemplando "+v.numeroLojas+" lojas/salas comerciais":"")+".";}},
+};
+
+var EMPRESAS_CONTRATADAS={
+  mm:{
+    label:"M+M Arquitetura & Design",
+    razaoSocial:"M+M ARQUITETURA & DESIGN",
+    cnpj:"15.733.454/0001-49",
+    endereco:"Av. 9 de Julho, 4939, Sala 141 - Itaim Bibi, São Paulo/SP",
+    telefone:"(11) 97611-1954 / (31) 99615-8800",
+    email:"marcello@mmarquitetura.com",
+  },
+  construction:{
+    label:"Construction & Communication Serviços Integrados Ltda",
+    razaoSocial:"Construction e Communication Serviços Integrados Ltda",
+    cnpj:"59.357.280/0001-32",
+    endereco:"Rua Marco Aurélio de Miranda, 269 - Buritis, Belo Horizonte/MG - CEP 30.575-210",
+    telefone:"(31) 9887-8833",
+    email:"familiamoraes021@gmail.com",
+  },
+};
+
+var BANCARIO_CONSTRUCTION={
+  agencia:"0001",
+  conta:"5694541-6",
+  instituicao:"403 - Cora SCD",
+  empresa:"Construction e Communication Serviços Integrados Ltda",
+  cnpj:"59.357.280/0001-32",
+  pix:"3a7719ad-efe1-47e8-8a80-6dc3fc2c7277",
+};
+
+var STATUS_ORC={
+  rascunho:{label:"Rascunho",bg:"#f3f4f6",color:"#6b7280"},
+  enviado:{label:"Enviado",bg:"#dbeafe",color:"#2563EB"},
+  aprovado:{label:"Aprovado",bg:"#dcfce7",color:"#16a34a"},
+  recusado:{label:"Recusado",bg:"#fee2e2",color:"#dc2626"},
+};
+
+function fmtMoedaBR(v){ return (v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+
+function dataExtensoBR(iso){
+  var meses=["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+  if(!iso)return "";
+  var d=new Date(iso+"T00:00:00");
+  return d.getDate()+" de "+meses[d.getMonth()]+" de "+d.getFullYear();
+}
+
+function lbOrc(v){ return v?v:"_____________________"; }
+
+function enderecoOrc(cli){
+  cli=cli||{};
+  var partes=[];
+  if(cli.logradouro)partes.push(cli.logradouro+(cli.numeroEndereco?", "+cli.numeroEndereco:""));
+  if(cli.cidade||cli.estado)partes.push([cli.cidade,cli.estado].filter(Boolean).join("/"));
+  return partes.join(", ")||"[ENDEREÇO]";
+}
+
+function cabecalhoOrcHTML(){
+  return '<div style="font-size:11px;color:#555;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:18px;">M+M ARQUITETURA &amp; DESIGN — Av. 9 de Julho, 4939, Sala 141, Itaim Bibi, São Paulo/SP<br>(11) 97611-1954 / (31) 99615-8800 · marcello@mmarquitetura.com · www.mmarquitetura.com</div>';
+}
+
+function cabecalhoEmpresaHTML(empresa){
+  return '<div style="font-size:11px;color:#555;border-bottom:2px solid #111;padding-bottom:8px;margin-bottom:18px;">'+empresa.razaoSocial+" — "+empresa.endereco+"<br>"+empresa.telefone+" · "+empresa.email+"</div>";
+}
+
+function formatarSequencialOrc(n){
+  return n>=1000 ? n.toLocaleString("pt-BR") : String(n).padStart(3,"0");
+}
+
+function dadosBancariosOrcHTML(b){
+  b=b||{};
+  return "<p><b>Dados para transferência:</b><br>Agência: "+(b.agencia||"")+"<br>Conta: "+(b.conta||"")+"<br>Instituição: "+(b.instituicao||"")+"<br>Empresa: "+(b.empresa||"")+"<br>CNPJ: "+(b.cnpj||"")+"<br>Chave Pix para transferência: "+(b.pix||"")+"</p>";
+}
+
+function etapasGridOrcHTML(etapas){
+  etapas=etapas||[];
+  if(!etapas.length)return "";
+  var shades=["#f2f2f2","#c9c9c9","#8f8f8f","#595959","#3d3d3d"];
+  var larguraCol=(100/etapas.length).toFixed(2)+"%";
+  var linhaTitulos="<tr>",linhaConteudo="<tr>";
+  etapas.forEach(function(e,i){
+    var bg=shades[Math.min(i,shades.length-1)];
+    var cor=i>=2?"#ffffff":"#000000";
+    linhaTitulos+='<td style="width:'+larguraCol+";background:"+bg+";color:"+cor+';padding:8px;font-weight:bold;text-align:center;font-size:13px;">'+e.titulo+"</td>";
+    linhaConteudo+='<td style="width:'+larguraCol+";background:"+bg+";color:"+cor+';vertical-align:top;padding:10px 16px;"><ul style="margin:0;padding-left:16px;font-size:12.5px;">'+(e.atividades||[]).map(function(a){return "<li>"+a+"</li>";}).join("")+"</ul></td>";
+  });
+  linhaTitulos+="</tr>";linhaConteudo+="</tr>";
+  return "<h4>Etapas do projeto</h4><p>As etapas do projeto de arquitetura seguirão conforme os quadros abaixo:</p>"
+    +'<table style="width:100%;border-collapse:collapse;margin:14px 0;table-layout:fixed;"><tbody>'+linhaTitulos+linhaConteudo+"</tbody></table>";
+}
+
+function etapasClausulaOrcHTML(etapas){
+  etapas=etapas||[];
+  if(!etapas.length)return "";
+  var html="<p>1.2. Os serviços técnicos contratados compreendem especificamente as seguintes etapas sequenciais de projeto:</p><ul>";
+  etapas.forEach(function(e,i){
+    var letra=String.fromCharCode(65+i);
+    html+='<li style="margin-bottom:8px;"><b>'+letra+". "+e.titulo+":</b> "+(e.atividades||[]).join(", ")+".</li>";
+  });
+  html+="</ul>";
+  return html;
+}
+
+function entregaveisTextoOrcHTML(ent){
+  ent=ent||{};
+  var itens=ent.checklist||[];
+  var texto="Como resultado do projeto desenvolvido, serão entregues os desenhos técnicos em pranchas "+(ent.tamanhoPrancha||"")+", em formato "+(ent.formatoDigital||"")+(itens.length?". Constará "+itens.join(", ").toLowerCase():"")+".";
+  if(ent.extra)texto+=" "+ent.extra;
+  return "<h4>Entregáveis</h4><p>"+texto+"</p>";
+}
+
+function tabelaHonorariosOrcHTML(val){
+  val=val||{};
+  var total=parseFloat(val.valorTotal||0);
+  if(val.modo==="avista"){
+    var desconto=parseFloat(val.percentualDesconto||0);
+    var valorFinal=total*(1-desconto/100);
+    return '<table style="width:100%;border-collapse:collapse;margin:14px 0;"><thead><tr><th style="border:1px solid #ccc;padding:6px 8px;background:#f4f4f4;">Condição</th><th style="border:1px solid #ccc;padding:6px 8px;background:#f4f4f4;">Valor</th></tr></thead><tbody>'
+      +'<tr><td style="border:1px solid #ccc;padding:6px 8px;">Valor total do projeto</td><td style="border:1px solid #ccc;padding:6px 8px;">'+fmtMoedaBR(total)+"</td></tr>"
+      +'<tr><td style="border:1px solid #ccc;padding:6px 8px;">Pagamento à vista, com '+desconto+'% de desconto</td><td style="border:1px solid #ccc;padding:6px 8px;"><b>'+fmtMoedaBR(valorFinal)+"</b></td></tr>"
+      +"</tbody></table>";
+  }
+  var html="<p><b>Valor total do projeto: "+fmtMoedaBR(total)+"</b></p>";
+  html+='<table style="width:100%;border-collapse:collapse;margin:14px 0;"><thead><tr><th style="border:1px solid #ccc;padding:6px 8px;background:#f4f4f4;">Etapa</th><th style="border:1px solid #ccc;padding:6px 8px;background:#f4f4f4;">%</th><th style="border:1px solid #ccc;padding:6px 8px;background:#f4f4f4;">Valor</th></tr></thead><tbody>';
+  (val.tabelaItens||[]).forEach(function(it){
+    html+='<tr><td style="border:1px solid #ccc;padding:6px 8px;">'+(it.etapa||"")+'</td><td style="border:1px solid #ccc;padding:6px 8px;">'+(it.pct||0)+'%</td><td style="border:1px solid #ccc;padding:6px 8px;">'+fmtMoedaBR(parseFloat(it.valor||0))+"</td></tr>";
+  });
+  html+="</tbody></table>";
+  return html;
+}
+
+function assinaturaOrcHTML(opcoes){
+  if(!opcoes||!opcoes.incluirAssinatura)return "";
+  return '<div style="margin-top:34px;"><img src="/orcamentos/assinatura.png" style="max-width:240px;display:block;"></div>';
+}
+
+function buildOrcamentoHTML(record,tipoDocumento){
+  var numero=record.numeroFormatado||"[NÚMERO]";
+  var cli=record.cliente||{};
+  var objeto=(record.objeto&&record.objeto.objetoGerado)||"[objeto não gerado]";
+  var prazos=record.prazos||{};
+  var opcoes=record.opcoes||{};
+  var dataStr=dataExtensoBR(prazos.dataDoc);
+  var foroCidade=(prazos.foro||"São Paulo").split(",")[0]||"São Paulo";
+
+  if(tipoDocumento==="contrato"){
+    var empresa=EMPRESAS_CONTRATADAS[record.empresaContratada]||EMPRESAS_CONTRATADAS.mm;
+    var empresaFiscal=(record.bancario&&record.bancario.empresa)||"";
+    var cnpjFiscal=(record.bancario&&record.bancario.cnpj)||"";
+    var blocoRepresentante=cli.representante
+      ? "<p><b>Representado por (pessoa jurídica):</b> "+cli.representante+", CPF do representante: "+lbOrc(cli.representanteCpf)+", RG do representante: "+lbOrc(cli.representanteRg)+".</p>"
+      : "";
+    return ""
+      +cabecalhoEmpresaHTML(empresa)
+      +"<h3>CONTRATO DE PRESTAÇÃO DE SERVIÇOS DE PROJETOS "+numero+"</h3>"
+      +"<p>Pelo presente instrumento particular, as partes abaixo identificadas e qualificadas têm, entre si, justo e contratado o presente Contrato de Prestação de Serviços de Projetos de Arquitetura, mediante as cláusulas e condições a seguir ajustadas, as quais mutuamente aceitam e se obrigam a cumprir integralmente:</p>"
+      +"<h4>CONTRATANTE</h4>"
+      +"<p>Nome/Razão Social: "+(cli.nome||"[CLIENTE]")+"<br>"
+      +"Nacionalidade/Estado Civil (se pessoa física): "+lbOrc(cli.nacionalidade)+"<br>"
+      +"Profissão: "+lbOrc(cli.profissao)+"<br>"
+      +"CNPJ/CPF: "+(cli.doc||"[CNPJ/CPF]")+"<br>"
+      +"Inscrição Estadual/RG: "+lbOrc(cli.rgIe)+"<br>"
+      +"Endereço/Sede: "+enderecoOrc(cli)+"</p>"
+      +blocoRepresentante
+      +"<h4>CONTRATADA</h4>"
+      +"<p>Razão Social: "+empresa.razaoSocial+"<br>"
+      +"CNPJ: "+empresa.cnpj+"<br>"
+      +"Endereço: "+empresa.endereco+"<br>"
+      +"Telefone: "+empresa.telefone+"<br>"
+      +"E-mail: "+empresa.email+"</p>"
+      +"<p>A responsabilidade fiscal e financeira ficará a cargo da "+empresaFiscal+", CNPJ "+cnpjFiscal+".</p>"
+      +"<h4>CLÁUSULA PRIMEIRA — OBJETO E ESCOPO</h4>"
+      +"<p>1.1. "+objeto+"</p>"
+      +etapasClausulaOrcHTML(record.etapas)
+      +"<h4>CLÁUSULA SEGUNDA — PRAZO DE ENTREGA</h4>"
+      +"<p>2.1. O prazo total para o desenvolvimento e entrega das etapas previstas na Cláusula Primeira é de "+(prazos.prazoDias||"")+" dias, contados a partir da assinatura deste instrumento e do fornecimento, por parte do CONTRATANTE, de toda a base de dados técnica necessária.</p>"
+      +"<p>2.2. O tempo de análise de projeto por parte do CONTRATANTE superior a 3 (três) dias implicará na interrupção do prazo de entrega, acrescendo-se os dias excedentes de análise ao prazo final.</p>"
+      +"<h4>CLÁUSULA TERCEIRA — VALOR E FORMA DE PAGAMENTO</h4>"
+      +"<p>3.1. Pelos serviços técnicos descritos na Cláusula Primeira, o CONTRATANTE pagará à CONTRATADA o valor estruturado sob a seguinte forma de pagamento:</p>"
+      +tabelaHonorariosOrcHTML(record.valores)
+      +"<p>3.2. Em caso de descumprimento quanto ao pagamento tempestivo, incidirá sobre o valor da parcela em atraso multa pecuniária de 2% (dois por cento), juros de mora de 1% a.m. (um por cento ao mês) e correção monetária.</p>"
+      +"<p>O recebimento e a Nota Fiscal serão feitos em nome da empresa <b>"+empresaFiscal+"</b>.</p>"
+      +dadosBancariosOrcHTML(record.bancario)
+      +"<h4>CLÁUSULA QUARTA — OBRIGAÇÕES DAS PARTES</h4>"
+      +"<p>4.1. <b>Da CONTRATADA:</b> responsabilizar-se pela exatidão técnica dos serviços executados e entregar os resultados correspondentes em formato digital "+((record.entregaveis&&record.entregaveis.formatoDigital)||"PDF")+".</p>"
+      +"<p>4.2. <b>Do CONTRATANTE:</b> fornecer com a devida antecedência as bases topográficas, sondagens e diretrizes das viabilidades de água, esgoto e energia, além de arcar diretamente com as taxas de aprovação, cartório e emissão de RRT/ART junto aos conselhos profissionais.</p>"
+      +"<h4>CLÁUSULA QUINTA — RESCISÃO</h4>"
+      +"<p>5.1. O contrato poderá ser rescindido por mútuo acordo ou unilateralmente mediante comunicação escrita enviada por e-mail com 30 (trinta) dias de antecedência, hipótese na qual serão devidos os valores equivalentes às etapas comprovadamente executadas até a data da resilição.</p>"
+      +"<h4>CLÁUSULA SEXTA — FORO</h4>"
+      +"<p>6.1. As partes elegem o foro da Comarca de "+(prazos.foro||"")+" para dirimir quaisquer dúvidas ou litígios provenientes deste instrumento, com renúncia expressa a qualquer outro foro por mais privilegiado que seja.</p>"
+      +"<p>E, por estarem justos e acordados, firmam o presente instrumento em 2 (duas) vias de igual teor e forma na presença das testemunhas abaixo.</p>"
+      +'<p style="margin-top:20px;">'+foroCidade+", "+dataStr+".</p>"
+      +'<div style="margin-top:40px;">'
+      +'<div style="margin-top:36px;border-top:1px solid #333;width:60%;padding-top:4px;font-size:12.5px;">CONTRATANTE</div>'
+      +'<div style="margin-top:36px;border-top:1px solid #333;width:60%;padding-top:4px;font-size:12.5px;">CONTRATADA (M+M ARQUITETURA &amp; DESIGN)</div>'
+      +'<div style="margin-top:36px;border-top:1px solid #333;width:60%;padding-top:4px;font-size:12.5px;">Testemunha 1 — Nome/CPF</div>'
+      +'<div style="margin-top:36px;border-top:1px solid #333;width:60%;padding-top:4px;font-size:12.5px;">Testemunha 2 — Nome/CPF</div>'
+      +"</div>";
+  }
+
+  var capaHTML=opcoes.incluirCapa?'<div style="page-break-after:always;text-align:center;margin:0 0 24px;"><img src="/orcamentos/capa.jpg" style="width:100%;max-width:900px;"></div>':"";
+  var portfolio1HTML=opcoes.incluirPortfolio1?'<div style="page-break-after:always;text-align:center;margin:0 0 24px;"><img src="/orcamentos/portfolio1.jpg" style="width:100%;max-width:900px;"></div>':"";
+  var portfolio2HTML=opcoes.incluirPortfolio2?'<div style="page-break-after:always;text-align:center;margin:0 0 24px;"><img src="/orcamentos/portfolio2.jpg" style="width:100%;max-width:900px;"></div>':"";
+
+  return ""
+    +capaHTML
+    +"<div>"
+    +cabecalhoOrcHTML()
+    +"<h3>ORÇAMENTO "+numero+"</h3>"
+    +"<p><b>Cliente:</b> "+(cli.nome||"[CLIENTE]")+"</p>"
+    +"<p><b>Objeto:</b> "+objeto+"</p>"
+    +"<p><b>Prazo de entrega:</b> "+(prazos.prazoDias||"")+" dias, contados a partir do aceite. O tempo de análise e aprovação do cliente e de órgãos públicos não é computado no prazo.</p>"
+    +"<h4>Honorários</h4>"
+    +tabelaHonorariosOrcHTML(record.valores)
+    +dadosBancariosOrcHTML(record.bancario)
+    +etapasGridOrcHTML(record.etapas)
+    +entregaveisTextoOrcHTML(record.entregaveis)
+    +'<p style="font-size:12px;color:#777;margin-top:6px;">Validade desta proposta: '+(prazos.validadeDias||"")+" dias.<br>"
+    +"Taxas de aprovação em órgãos públicos correm por conta do contratante.<br>"
+    +"A taxa de RRT/ART é por conta da M+M Arquitetura.<br>"
+    +"Não está incluso acompanhamento de obra e responsabilidade técnica (RT) de execução, salvo acordo em contrário.</p>"
+    +'<p style="margin-top:24px;">'+foroCidade+", "+dataStr+".</p>"
+    +assinaturaOrcHTML(opcoes)
+    +"</div>"
+    +portfolio1HTML
+    +portfolio2HTML;
+}
+
+function imprimirOrcamento(record,tipoDocumento){
+  var titulo=tipoDocumento==="contrato"?"Contrato":"Orçamento";
+  var corpo=buildOrcamentoHTML(record,tipoDocumento);
+  var html='<!DOCTYPE html><html><head><meta charset="utf-8"><title>M+M '+titulo+" "+(record.numeroFormatado||"")+'</title>'
+    +"<style>body{font-family:Arial,Helvetica,sans-serif;color:#222;line-height:1.55;padding:30px 36px;max-width:900px;margin:0 auto;}"
+    +"h3{color:#e30613;border-bottom:1px solid #eee;padding-bottom:6px;}"
+    +"table{width:100%;border-collapse:collapse;}"
+    +"@media print{@page{margin:1.5cm}}</style></head><body>"
+    +corpo
+    +"<script>setTimeout(function(){window.print();},400);<\/script></body></html>";
+  var w=window.open("","_blank","width=900,height=800");
+  if(w){w.document.write(html);w.document.close();}
+}
+
+async function getCalibracaoAno(db,ano){
+  var snap=await getDoc(doc(db,"orcamentos_config","contadores"));
+  var data=snap.exists()?snap.data():{};
+  return parseInt(data[String(ano)]||0)||0;
+}
+
+async function salvarCalibracaoAno(db,ano,valor){
+  await setDoc(doc(db,"orcamentos_config","contadores"),{[String(ano)]:parseInt(valor)||0},{merge:true});
+}
+
+async function proximoNumeroOrcamento(db,ano){
+  var q=query(collection(db,"orcamentos"),where("ano","==",ano),orderBy("numero","desc"),limit(1));
+  var snap=await getDocs(q);
+  var maxExistente=snap.empty?0:snap.docs[0].data().numero;
+  var calibracao=await getCalibracaoAno(db,ano);
+  var proximo=Math.max(maxExistente,calibracao)+1;
+  var ano2=String(ano).slice(-2);
+  return {numero:proximo,numeroFormatado:"MM"+ano2+formatarSequencialOrc(proximo)};
+}
+
+function recalcValoresOrc(v){
+  var total=parseFloat(v.valorTotal||0);
+  var itens=(v.tabelaItens||[]).map(function(it){return Object.assign({},it,{valor:+(total*parseFloat(it.pct||0)/100).toFixed(2)});});
+  var valorComDesconto=+(total*(1-parseFloat(v.percentualDesconto||0)/100)).toFixed(2);
+  return Object.assign({},v,{tabelaItens:itens,valorComDesconto:valorComDesconto});
+}
+
+function gerarParcelasIguaisForm(v){
+  var n=parseInt(v.numeroParcelas||1)||1;
+  var total=parseFloat(v.valorTotal||0);
+  var valorParcela=total/n,pct=100/n;
+  var itens=[];
+  for(var i=1;i<=n;i++){
+    itens.push({etapa:i===1?"Na assinatura/aceite da proposta":"Parcela "+i,pct:+pct.toFixed(2),valor:+valorParcela.toFixed(2)});
+  }
+  return itens;
+}
+
+function formEtapasToRecord(etapas){
+  return (etapas||[]).map(function(e){return {titulo:e.titulo,atividades:(e.atividadesText||"").split("\n").map(function(s){return s.trim();}).filter(Boolean)};});
+}
+
+function formToRecordLike(form,existente){
+  return {
+    numeroFormatado: existente?existente.numeroFormatado:("MM"+String(form.ano).slice(-2)+"XXX (novo)"),
+    ano:form.ano,status:form.status,cliente:form.cliente,objeto:form.objeto,valores:form.valores,
+    etapas:formEtapasToRecord(form.etapas),entregaveis:form.entregaveis,prazos:form.prazos,bancario:form.bancario,opcoes:form.opcoes,
+  };
+}
+
+function computeObjetoGerado(form){
+  if(form.objeto.modo!=="tipologia")return form.objeto.blocoLivre||"";
+  var t=TIPOLOGIAS[form.objeto.tipologia];
+  if(!t)return "";
+  var valores={};
+  t.campos.forEach(function(campo){
+    var v=form.objeto.camposTipologia[campo.id];
+    if(campo.tipo==="checklist"){
+      valores[campo.id]=(v&&v.length)?v.join(", "):"infraestrutura e áreas de apoio a definir";
+    } else {
+      valores[campo.id]=v||"";
+    }
+  });
+  return t.gerar(valores,enderecoOrc(form.cliente));
+}
+
+function INIT_ORC_FORM(){
+  var hoje=new Date().toISOString().slice(0,10);
+  return {
+    ano:new Date().getFullYear(),
+    status:"rascunho",
+    empresaContratada:"",
+    cliente:{nome:"",doc:"",logradouro:"",numeroEndereco:"",cidade:"",estado:"",nacionalidade:"",profissao:"",rgIe:"",representante:"",representanteCpf:"",representanteRg:""},
+    objeto:{modo:"livre",blocoLivre:"",tipologia:"",camposTipologia:{},objetoGerado:""},
+    valores:{valorTotal:0,modo:"parcelado",tabelaItens:[{etapa:"Na assinatura/aceite da proposta",pct:100,valor:0}],numeroParcelas:1,percentualDesconto:10,valorComDesconto:0},
+    etapas:ETAPAS_PADRAO.map(function(e){return {titulo:e.titulo,atividadesText:e.atividades.join("\n")};}),
+    entregaveis:{checklist:ENTREGAVEIS_PADRAO.slice(),tamanhoPrancha:"A1",formatoDigital:"PDF",extra:""},
+    prazos:{prazoDias:60,validadeDias:15,foro:"São Paulo/SP",dataDoc:hoje},
+    bancario:Object.assign({},BANCARIO_CONSTRUCTION),
+    opcoes:{incluirAssinatura:true,incluirCapa:false,incluirPortfolio1:false,incluirPortfolio2:false},
+  };
+}
+
+function OrcField(props){
+  return (
+    <div style={{marginBottom:"10px"}}>
+      <div style={{fontSize:"11px",fontWeight:600,color:"#6b7280",marginBottom:"3px"}}>{props.label}</div>
+      {props.children}
+    </div>
+  );
+}
+
+function OrcamentosTab(props){
+  var db=props.db,authUser=props.authUser;
+  var vs=useState("lista"); var view=vs[0],setView=vs[1];
+  var os2=useState([]); var orcamentos=os2[0],setOrcamentos=os2[1];
+  var lds=useState(true); var loadingList=lds[0],setLoadingList=lds[1];
+  var eis=useState(null); var editingId=eis[0],setEditingId=eis[1];
+  var fs2=useState(INIT_ORC_FORM); var form=fs2[0],setForm=fs2[1];
+  var srs=useState(""); var busca=srs[0],setBusca=srs[1];
+  var fss=useState(""); var filtroStatus=fss[0],setFiltroStatus=fss[1];
+  var fas=useState(""); var filtroAno=fas[0],setFiltroAno=fas[1];
+  var savs=useState(false); var salvando=savs[0],setSalvando=savs[1];
+  var errs=useState(""); var erro=errs[0],setErro=errs[1];
+  var pvs=useState(""); var previewTipo=pvs[0],setPreviewTipo=pvs[1];
+  var phs=useState(""); var previewHtml=phs[0],setPreviewHtml=phs[1];
+  var cas=useState({}); var calibracoes=cas[0],setCalibracoes=cas[1];
+  var cbas=useState(new Date().getFullYear()); var calibAno=cbas[0],setCalibAno=cbas[1];
+  var cbvs=useState(""); var calibValor=cbvs[0],setCalibValor=cbvs[1];
+
+  useEffect(function(){
+    if(!db)return;
+    var unsub=onSnapshot(collection(db,"orcamentos"),function(snap){
+      var list=snap.docs.map(function(d){return Object.assign({id:d.id},d.data());});
+      list.sort(function(a,b){return (b.criadoEm||"").localeCompare(a.criadoEm||"");});
+      setOrcamentos(list);
+      setLoadingList(false);
+    },function(err){console.error(err);setLoadingList(false);});
+    return unsub;
+  },[db]);
+
+  useEffect(function(){
+    if(!db)return;
+    var unsub=onSnapshot(doc(db,"orcamentos_config","contadores"),function(snap){
+      setCalibracoes(snap.exists()?snap.data():{});
+    },function(err){console.error(err);});
+    return unsub;
+  },[db]);
+
+  async function salvarCalibracao(){
+    if(!calibValor)return;
+    await salvarCalibracaoAno(db,calibAno,calibValor);
+    setCalibValor("");
+  }
+
+  function upd(path,value){
+    setForm(function(prev){
+      var next=Object.assign({},prev);
+      var keys=path.split(".");
+      var cur=next;
+      for(var i=0;i<keys.length-1;i++){
+        cur[keys[i]]=Object.assign({},cur[keys[i]]);
+        cur=cur[keys[i]];
+      }
+      cur[keys[keys.length-1]]=value;
+      return next;
+    });
+  }
+
+  function handleValorTotalChange(v){
+    setForm(function(prev){return Object.assign({},prev,{valores:recalcValoresOrc(Object.assign({},prev.valores,{valorTotal:v}))});});
+  }
+  function handleDescontoChange(v){
+    setForm(function(prev){return Object.assign({},prev,{valores:recalcValoresOrc(Object.assign({},prev.valores,{percentualDesconto:v}))});});
+  }
+  function updItemPct(idx,pctStr){
+    setForm(function(prev){
+      var total=parseFloat(prev.valores.valorTotal||0),pct=parseFloat(pctStr||0);
+      var itens=prev.valores.tabelaItens.map(function(it,i){return i===idx?Object.assign({},it,{pct:pctStr,valor:+(total*pct/100).toFixed(2)}):it;});
+      return Object.assign({},prev,{valores:Object.assign({},prev.valores,{tabelaItens:itens})});
+    });
+  }
+  function updItemValor(idx,valorStr){
+    setForm(function(prev){
+      var total=parseFloat(prev.valores.valorTotal||0),valor=parseFloat(valorStr||0);
+      var pct=total?+(valor/total*100).toFixed(2):0;
+      var itens=prev.valores.tabelaItens.map(function(it,i){return i===idx?Object.assign({},it,{valor:valorStr,pct:pct}):it;});
+      return Object.assign({},prev,{valores:Object.assign({},prev.valores,{tabelaItens:itens})});
+    });
+  }
+  function updItemEtapaNome(idx,v){
+    setForm(function(prev){
+      var itens=prev.valores.tabelaItens.map(function(it,i){return i===idx?Object.assign({},it,{etapa:v}):it;});
+      return Object.assign({},prev,{valores:Object.assign({},prev.valores,{tabelaItens:itens})});
+    });
+  }
+  function addItemLinha(){
+    setForm(function(prev){return Object.assign({},prev,{valores:Object.assign({},prev.valores,{tabelaItens:prev.valores.tabelaItens.concat([{etapa:"",pct:0,valor:0}])})});});
+  }
+  function removeItemLinha(idx){
+    setForm(function(prev){return Object.assign({},prev,{valores:Object.assign({},prev.valores,{tabelaItens:prev.valores.tabelaItens.filter(function(_,i){return i!==idx;})})});});
+  }
+  function aplicarParcelasIguais(){
+    setForm(function(prev){return Object.assign({},prev,{valores:Object.assign({},prev.valores,{tabelaItens:gerarParcelasIguaisForm(prev.valores)})});});
+  }
+
+  function updEtapaTitulo(idx,v){
+    setForm(function(prev){return Object.assign({},prev,{etapas:prev.etapas.map(function(e,i){return i===idx?Object.assign({},e,{titulo:v}):e;})});});
+  }
+  function updEtapaAtividades(idx,v){
+    setForm(function(prev){return Object.assign({},prev,{etapas:prev.etapas.map(function(e,i){return i===idx?Object.assign({},e,{atividadesText:v}):e;})});});
+  }
+  function addEtapaForm(){
+    setForm(function(prev){return Object.assign({},prev,{etapas:prev.etapas.concat([{titulo:"Nova etapa",atividadesText:""}])});});
+  }
+  function removeEtapaForm(idx){
+    setForm(function(prev){return Object.assign({},prev,{etapas:prev.etapas.filter(function(_,i){return i!==idx;})});});
+  }
+  function sugerirEtapasForm(){
+    setForm(function(prev){return Object.assign({},prev,{etapas:ETAPAS_PADRAO.map(function(e){return {titulo:e.titulo,atividadesText:e.atividades.join("\n")};})});});
+  }
+
+  function toggleEntregavel(opcao){
+    setForm(function(prev){
+      var atual=prev.entregaveis.checklist||[];
+      var novo=atual.includes(opcao)?atual.filter(function(o){return o!==opcao;}):atual.concat([opcao]);
+      return Object.assign({},prev,{entregaveis:Object.assign({},prev.entregaveis,{checklist:novo})});
+    });
+  }
+  function toggleOpcao(key){
+    setForm(function(prev){return Object.assign({},prev,{opcoes:Object.assign({},prev.opcoes,{[key]:!prev.opcoes[key]})});});
+  }
+  function setTipologia(id){
+    setForm(function(prev){return Object.assign({},prev,{objeto:Object.assign({},prev.objeto,{tipologia:id,camposTipologia:{}})});});
+  }
+  function updCampoTipologia(campoId,value){
+    setForm(function(prev){return Object.assign({},prev,{objeto:Object.assign({},prev.objeto,{camposTipologia:Object.assign({},prev.objeto.camposTipologia,{[campoId]:value})})});});
+  }
+  function toggleCampoChecklist(campoId,opcao){
+    setForm(function(prev){
+      var atual=prev.objeto.camposTipologia[campoId]||[];
+      var novoArr=atual.includes(opcao)?atual.filter(function(o){return o!==opcao;}):atual.concat([opcao]);
+      return Object.assign({},prev,{objeto:Object.assign({},prev.objeto,{camposTipologia:Object.assign({},prev.objeto.camposTipologia,{[campoId]:novoArr})})});
+    });
+  }
+  function gerarObjetoTipologia(){
+    upd("objeto.objetoGerado",computeObjetoGerado(form));
+  }
+
+  function abrirNovo(){
+    setForm(INIT_ORC_FORM());
+    setEditingId(null);
+    setPreviewHtml("");
+    setErro("");
+    setView("form");
+  }
+  function abrirEdicao(o){
+    setForm({
+      ano:o.ano,status:o.status,empresaContratada:o.empresaContratada||"",cliente:o.cliente,objeto:o.objeto,valores:o.valores,
+      etapas:(o.etapas||[]).map(function(e){return {titulo:e.titulo,atividadesText:(e.atividades||[]).join("\n")};}),
+      entregaveis:o.entregaveis,prazos:o.prazos,bancario:o.bancario,opcoes:o.opcoes,
+    });
+    setEditingId(o.id);
+    setPreviewHtml("");
+    setErro("");
+    setView("form");
+  }
+
+  function gerarPreview(tipo){
+    var existente=editingId?orcamentos.find(function(o){return o.id===editingId;}):null;
+    setPreviewTipo(tipo);
+    setPreviewHtml(buildOrcamentoHTML(formToRecordLike(form,existente),tipo));
+  }
+
+  async function salvar(){
+    if(!form.cliente.nome||!form.cliente.nome.trim()){setErro("Informe o nome do cliente.");return;}
+    if(!form.empresaContratada){setErro("Selecione a empresa contratada.");return;}
+    setErro("");setSalvando(true);
+    try{
+      var payload={
+        ano:form.ano,status:form.status,empresaContratada:form.empresaContratada,cliente:form.cliente,objeto:form.objeto,valores:form.valores,
+        etapas:formEtapasToRecord(form.etapas),entregaveis:form.entregaveis,prazos:form.prazos,bancario:form.bancario,opcoes:form.opcoes,
+        atualizadoEm:new Date().toISOString(),atualizadoPor:authUser?authUser.email:"",
+      };
+      var id=editingId;
+      if(!id){
+        var prox=await proximoNumeroOrcamento(db,form.ano);
+        payload.numero=prox.numero;
+        payload.numeroFormatado=prox.numeroFormatado;
+        payload.criadoEm=new Date().toISOString();
+        payload.criadoPor=authUser?authUser.email:"";
+        id="o"+uid();
+      } else {
+        var existente=orcamentos.find(function(o){return o.id===id;});
+        payload.numero=existente?existente.numero:1;
+        payload.numeroFormatado=existente?existente.numeroFormatado:"";
+        payload.criadoEm=existente?existente.criadoEm:new Date().toISOString();
+        payload.criadoPor=existente?existente.criadoPor:(authUser?authUser.email:"");
+      }
+      await setDoc(doc(db,"orcamentos",id),payload,{merge:true});
+      setEditingId(null);
+      setForm(INIT_ORC_FORM());
+      setPreviewHtml("");
+      setView("lista");
+    }catch(ex){console.error(ex);setErro("Erro ao salvar: "+ex.message);}
+    setSalvando(false);
+  }
+
+  async function mudarStatusLista(o,novoStatus){
+    try{
+      await updateDoc(doc(db,"orcamentos",o.id),{status:novoStatus,atualizadoEm:new Date().toISOString(),atualizadoPor:authUser?authUser.email:""});
+    }catch(ex){console.error(ex);}
+  }
+
+  var anosDisponiveis=[...new Set(orcamentos.map(function(o){return o.ano;}))].sort(function(a,b){return b-a;});
+  var listaFiltrada=orcamentos.filter(function(o){
+    var buscaL=busca.toLowerCase();
+    var okBusca=!busca||((o.cliente&&o.cliente.nome||"").toLowerCase().indexOf(buscaL)>=0)||((o.numeroFormatado||"").toLowerCase().indexOf(buscaL)>=0);
+    var okStatus=!filtroStatus||o.status===filtroStatus;
+    var okAno=!filtroAno||String(o.ano)===String(filtroAno);
+    return okBusca&&okStatus&&okAno;
+  });
+
+  if(view==="lista"){
+    return (
+      <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem"}}>
+          <div style={B.lbl}>Orçamentos & Contratos</div>
+          <button onClick={abrirNovo} style={B.pri}>+ Novo orçamento</button>
+        </div>
+        <div style={Object.assign({},B.card,{marginBottom:"12px"})}>
+          <div style={{fontSize:"11px",fontWeight:700,color:"#9ca3af",textTransform:"uppercase",letterSpacing:".06em",marginBottom:"8px"}}>Recalibrar numeração</div>
+          <div style={{display:"flex",gap:"8px",alignItems:"flex-end",flexWrap:"wrap"}}>
+            <OrcField label="Ano"><input type="number" value={calibAno} onChange={function(e){setCalibAno(parseInt(e.target.value)||calibAno);}} style={Object.assign({},B.inp,{width:"90px"})}/></OrcField>
+            <OrcField label="Próximo número será maior que"><input type="number" value={calibValor} onChange={function(e){setCalibValor(e.target.value);}} placeholder={String(calibracoes[String(calibAno)]||0)} style={Object.assign({},B.inp,{width:"180px"})}/></OrcField>
+            <button onClick={salvarCalibracao} style={Object.assign({},B.sec,{marginBottom:"10px"})}>Salvar calibração</button>
+            <div style={{fontSize:"11px",color:"#9ca3af",marginBottom:"10px"}}>Calibração atual de {calibAno}: {calibracoes[String(calibAno)]||0}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:"8px",marginBottom:"12px",flexWrap:"wrap"}}>
+          <input type="text" value={busca} onChange={function(e){setBusca(e.target.value);}} placeholder="Buscar por cliente ou número..." style={Object.assign({},B.inp,{flex:2,minWidth:"180px"})}/>
+          <select value={filtroStatus} onChange={function(e){setFiltroStatus(e.target.value);}} style={Object.assign({},B.inp,{flex:1,minWidth:"140px"})}>
+            <option value="">Todos os status</option>
+            {Object.keys(STATUS_ORC).map(function(s){return <option key={s} value={s}>{STATUS_ORC[s].label}</option>;})}
+          </select>
+          <select value={filtroAno} onChange={function(e){setFiltroAno(e.target.value);}} style={Object.assign({},B.inp,{flex:1,minWidth:"100px"})}>
+            <option value="">Todos os anos</option>
+            {anosDisponiveis.map(function(a){return <option key={a} value={a}>{a}</option>;})}
+          </select>
+        </div>
+        {loadingList?(
+          <div style={{textAlign:"center",padding:"2.5rem",color:"#9ca3af",fontSize:"13px"}}>Carregando...</div>
+        ):listaFiltrada.length===0?(
+          <div style={{textAlign:"center",padding:"2.5rem",color:"#9ca3af",fontSize:"13px"}}>{orcamentos.length===0?"Nenhum orçamento cadastrado ainda.":"Nenhum orçamento corresponde ao filtro."}</div>
+        ):(
+          listaFiltrada.map(function(o){
+            var st=STATUS_ORC[o.status]||STATUS_ORC.rascunho;
+            return (
+              <div key={o.id} style={Object.assign({},B.card,{padding:"10px 14px"})}>
+                <div style={{display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap"}}>
+                  <div style={{fontWeight:700,fontSize:"13px",color:"#111",minWidth:"80px"}}>{o.numeroFormatado}</div>
+                  <div style={{fontSize:"13px",color:"#374151",flex:1,minWidth:"140px"}}>{o.cliente&&o.cliente.nome}</div>
+                  <div style={{fontSize:"12px",color:"#9ca3af"}}>{o.ano}</div>
+                  <select value={o.status} onChange={function(e){mudarStatusLista(o,e.target.value);}} style={{fontSize:"11px",fontWeight:600,padding:"3px 8px",borderRadius:"20px",background:st.bg,color:st.color,border:"none",cursor:"pointer"}}>
+                    {Object.keys(STATUS_ORC).map(function(s){return <option key={s} value={s}>{STATUS_ORC[s].label}</option>;})}
+                  </select>
+                  <button onClick={function(){abrirEdicao(o);}} style={Object.assign({},B.ghost,{color:"#2563EB",border:"1px solid #dbeafe",borderRadius:"6px",padding:"3px 10px",fontSize:"12px"})}>Editar</button>
+                  <button onClick={function(){imprimirOrcamento(o,"orcamento");}} style={Object.assign({},B.ghost,{border:"1px solid #e5e7eb",borderRadius:"6px",padding:"3px 10px",fontSize:"12px"})}>Imprimir orçamento</button>
+                  <button onClick={function(){imprimirOrcamento(o,"contrato");}} style={Object.assign({},B.ghost,{border:"1px solid #e5e7eb",borderRadius:"6px",padding:"3px 10px",fontSize:"12px"})}>Imprimir contrato</button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1rem"}}>
+        <div style={B.lbl}>{editingId?"Editar orçamento":"Novo orçamento"}</div>
+        <button onClick={function(){setView("lista");}} style={B.sec}>← Voltar à lista</button>
+      </div>
+
+      <div style={B.card}>
+        <div style={{fontWeight:700,fontSize:"13px",marginBottom:"8px"}}>Numeração</div>
+        <div style={{display:"flex",gap:"10px",flexWrap:"wrap",alignItems:"flex-end"}}>
+          <OrcField label="Ano"><input type="number" value={form.ano} onChange={function(e){upd("ano",parseInt(e.target.value)||form.ano);}} style={B.inp}/></OrcField>
+          <OrcField label="Status"><select value={form.status} onChange={function(e){upd("status",e.target.value);}} style={B.inp}>{Object.keys(STATUS_ORC).map(function(s){return <option key={s} value={s}>{STATUS_ORC[s].label}</option>;})}</select></OrcField>
+          <OrcField label="Empresa contratada (para o contrato)">
+            <select value={form.empresaContratada} onChange={function(e){upd("empresaContratada",e.target.value);}} style={B.inp}>
+              <option value="">Selecione...</option>
+              {Object.keys(EMPRESAS_CONTRATADAS).map(function(k){return <option key={k} value={k}>{EMPRESAS_CONTRATADAS[k].label}</option>;})}
+            </select>
+          </OrcField>
+          <div style={{fontSize:"12px",color:"#9ca3af",marginBottom:"10px"}}>
+            {editingId?("Número: "+((orcamentos.find(function(o){return o.id===editingId;})||{}).numeroFormatado||"")):"Número será atribuído automaticamente ao salvar."}
+          </div>
+        </div>
+        <div style={{fontSize:"11px",color:"#9ca3af",marginTop:"4px"}}>O pagamento (Pix) sempre usa os dados bancários da Construction, independente da empresa contratada escolhida acima.</div>
+      </div>
+
+      <div style={B.card}>
+        <div style={{fontWeight:700,fontSize:"13px",marginBottom:"8px"}}>Cliente</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+          <OrcField label="Nome / Razão social"><input type="text" value={form.cliente.nome} onChange={function(e){upd("cliente.nome",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="CPF/CNPJ"><input type="text" value={form.cliente.doc} onChange={function(e){upd("cliente.doc",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Logradouro"><input type="text" value={form.cliente.logradouro} onChange={function(e){upd("cliente.logradouro",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Número"><input type="text" value={form.cliente.numeroEndereco} onChange={function(e){upd("cliente.numeroEndereco",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Cidade"><input type="text" value={form.cliente.cidade} onChange={function(e){upd("cliente.cidade",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Estado"><select value={form.cliente.estado} onChange={function(e){upd("cliente.estado",e.target.value);}} style={B.inp}><option value="">Selecione</option>{ESTADOS_UF.map(function(uf){return <option key={uf[0]} value={uf[0]}>{uf[1]} ({uf[0]})</option>;})}</select></OrcField>
+          <OrcField label="Nacionalidade"><input type="text" value={form.cliente.nacionalidade} onChange={function(e){upd("cliente.nacionalidade",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Profissão"><input type="text" value={form.cliente.profissao} onChange={function(e){upd("cliente.profissao",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="RG / Inscrição Estadual"><input type="text" value={form.cliente.rgIe} onChange={function(e){upd("cliente.rgIe",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Representante (se pessoa jurídica)"><input type="text" value={form.cliente.representante} onChange={function(e){upd("cliente.representante",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="CPF do representante"><input type="text" value={form.cliente.representanteCpf} onChange={function(e){upd("cliente.representanteCpf",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="RG do representante"><input type="text" value={form.cliente.representanteRg} onChange={function(e){upd("cliente.representanteRg",e.target.value);}} style={B.inp}/></OrcField>
+        </div>
+      </div>
+
+      <div style={B.card}>
+        <div style={{fontWeight:700,fontSize:"13px",marginBottom:"8px"}}>Objeto do contrato</div>
+        <div style={{display:"flex",gap:"14px",marginBottom:"10px"}}>
+          <label style={{fontSize:"13px",display:"flex",alignItems:"center",gap:"6px"}}><input type="radio" checked={form.objeto.modo==="livre"} onChange={function(){upd("objeto.modo","livre");}}/> Texto livre</label>
+          <label style={{fontSize:"13px",display:"flex",alignItems:"center",gap:"6px"}}><input type="radio" checked={form.objeto.modo==="tipologia"} onChange={function(){upd("objeto.modo","tipologia");}}/> Por tipologia</label>
+        </div>
+        {form.objeto.modo==="livre"?(
+          <OrcField label="Descrição do objeto"><textarea value={form.objeto.blocoLivre} onChange={function(e){upd("objeto.blocoLivre",e.target.value);}} rows={4} style={Object.assign({},B.inp,{resize:"vertical",fontFamily:"inherit"})}/></OrcField>
+        ):(
+          <div>
+            <OrcField label="Tipologia">
+              <select value={form.objeto.tipologia} onChange={function(e){setTipologia(e.target.value);}} style={B.inp}>
+                <option value="">Selecione</option>
+                {Object.keys(TIPOLOGIAS).map(function(id){return <option key={id} value={id}>{TIPOLOGIAS[id].label}</option>;})}
+              </select>
+            </OrcField>
+            {form.objeto.tipologia&&TIPOLOGIAS[form.objeto.tipologia].campos.map(function(campo){
+              var val=form.objeto.camposTipologia[campo.id];
+              return (
+                <OrcField key={campo.id} label={campo.label}>
+                  {campo.tipo==="select"?(
+                    <select value={val||""} onChange={function(e){updCampoTipologia(campo.id,e.target.value);}} style={B.inp}>
+                      <option value="">Selecione</option>
+                      {campo.opcoes.map(function(o){return <option key={o} value={o}>{o}</option>;})}
+                    </select>
+                  ):campo.tipo==="checklist"?(
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 14px"}}>
+                      {campo.opcoes.map(function(o){return (
+                        <label key={o} style={{fontSize:"12px",display:"flex",alignItems:"center",gap:"5px"}}>
+                          <input type="checkbox" checked={((val||[]).indexOf(o)>=0)} onChange={function(){toggleCampoChecklist(campo.id,o);}}/> {o}
+                        </label>
+                      );})}
+                    </div>
+                  ):(
+                    <input type={campo.tipo} value={val||""} onChange={function(e){updCampoTipologia(campo.id,e.target.value);}} style={B.inp}/>
+                  )}
+                </OrcField>
+              );
+            })}
+            {form.objeto.tipologia&&<button onClick={gerarObjetoTipologia} style={Object.assign({},B.sec,{marginBottom:"8px"})}>Gerar texto do objeto</button>}
+            <OrcField label="Objeto gerado (revise antes de salvar)"><textarea value={form.objeto.objetoGerado} onChange={function(e){upd("objeto.objetoGerado",e.target.value);}} rows={4} style={Object.assign({},B.inp,{resize:"vertical",fontFamily:"inherit"})}/></OrcField>
+          </div>
+        )}
+      </div>
+
+      <div style={B.card}>
+        <div style={{fontWeight:700,fontSize:"13px",marginBottom:"8px"}}>Valores</div>
+        <OrcField label="Valor total do projeto (R$)"><input type="number" value={form.valores.valorTotal} onChange={function(e){handleValorTotalChange(e.target.value);}} style={B.inp}/></OrcField>
+        <div style={{display:"flex",gap:"14px",marginBottom:"10px"}}>
+          <label style={{fontSize:"13px",display:"flex",alignItems:"center",gap:"6px"}}><input type="radio" checked={form.valores.modo==="parcelado"} onChange={function(){upd("valores.modo","parcelado");}}/> Parcelado</label>
+          <label style={{fontSize:"13px",display:"flex",alignItems:"center",gap:"6px"}}><input type="radio" checked={form.valores.modo==="avista"} onChange={function(){upd("valores.modo","avista");}}/> À vista com desconto</label>
+        </div>
+        {form.valores.modo==="parcelado"?(
+          <div>
+            <div style={{display:"flex",gap:"8px",alignItems:"flex-end",marginBottom:"8px"}}>
+              <OrcField label="Número de parcelas"><input type="number" value={form.valores.numeroParcelas} onChange={function(e){upd("valores.numeroParcelas",e.target.value);}} style={B.inp}/></OrcField>
+              <button onClick={aplicarParcelasIguais} style={Object.assign({},B.sec,{marginBottom:"10px"})}>Gerar parcelas iguais</button>
+            </div>
+            <table style={{width:"100%",borderCollapse:"collapse",marginBottom:"8px"}}>
+              <thead><tr><th style={{textAlign:"left",fontSize:"11px",color:"#9ca3af",padding:"4px"}}>Etapa</th><th style={{fontSize:"11px",color:"#9ca3af",padding:"4px"}}>%</th><th style={{fontSize:"11px",color:"#9ca3af",padding:"4px"}}>Valor</th><th></th></tr></thead>
+              <tbody>
+                {form.valores.tabelaItens.map(function(it,idx){
+                  return (
+                    <tr key={idx}>
+                      <td style={{padding:"2px"}}><input type="text" value={it.etapa} onChange={function(e){updItemEtapaNome(idx,e.target.value);}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px"})}/></td>
+                      <td style={{padding:"2px",width:"80px"}}><input type="number" value={it.pct} onChange={function(e){updItemPct(idx,e.target.value);}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px"})}/></td>
+                      <td style={{padding:"2px",width:"110px"}}><input type="number" value={it.valor} onChange={function(e){updItemValor(idx,e.target.value);}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px"})}/></td>
+                      <td style={{padding:"2px",width:"30px"}}><button onClick={function(){removeItemLinha(idx);}} style={Object.assign({},B.ghost,{color:"#dc2626"})}>✕</button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <button onClick={addItemLinha} style={B.sec}>+ Linha</button>
+            <div style={{fontSize:"12px",color:"#9ca3af",marginTop:"8px"}}>Total das linhas: {fmtMoedaBR(form.valores.tabelaItens.reduce(function(s,it){return s+parseFloat(it.valor||0);},0))}</div>
+          </div>
+        ):(
+          <div style={{display:"flex",gap:"10px"}}>
+            <OrcField label="% de desconto"><input type="number" value={form.valores.percentualDesconto} onChange={function(e){handleDescontoChange(e.target.value);}} style={B.inp}/></OrcField>
+            <div style={{fontSize:"13px",color:"#111",fontWeight:600,marginTop:"18px"}}>Valor com desconto: {fmtMoedaBR(form.valores.valorComDesconto)}</div>
+          </div>
+        )}
+      </div>
+
+      <div style={B.card}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"8px"}}>
+          <div style={{fontWeight:700,fontSize:"13px"}}>Etapas do projeto</div>
+          <button onClick={sugerirEtapasForm} style={B.sec}>Sugerir etapas padrão</button>
+        </div>
+        {form.etapas.map(function(e,idx){
+          return (
+            <div key={idx} style={{border:"1px solid #f0f0f0",borderRadius:"8px",padding:"10px",marginBottom:"8px"}}>
+              <div style={{display:"flex",gap:"8px",alignItems:"flex-end",marginBottom:"6px"}}>
+                <div style={{flex:1}}><OrcField label="Nome da etapa"><input type="text" value={e.titulo} onChange={function(ev){updEtapaTitulo(idx,ev.target.value);}} style={B.inp}/></OrcField></div>
+                <button onClick={function(){removeEtapaForm(idx);}} style={Object.assign({},B.sec,{marginBottom:"10px"})}>✕ Remover</button>
+              </div>
+              <OrcField label="Atividades (uma por linha)"><textarea value={e.atividadesText} onChange={function(ev){updEtapaAtividades(idx,ev.target.value);}} rows={3} style={Object.assign({},B.inp,{resize:"vertical",fontFamily:"inherit"})}/></OrcField>
+            </div>
+          );
+        })}
+        <button onClick={addEtapaForm} style={B.sec}>+ Etapa</button>
+      </div>
+
+      <div style={B.card}>
+        <div style={{fontWeight:700,fontSize:"13px",marginBottom:"8px"}}>Entregáveis</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 14px",marginBottom:"10px"}}>
+          {ENTREGAVEIS_OPCOES.map(function(op){return (
+            <label key={op} style={{fontSize:"12px",display:"flex",alignItems:"center",gap:"5px"}}>
+              <input type="checkbox" checked={form.entregaveis.checklist.indexOf(op)>=0} onChange={function(){toggleEntregavel(op);}}/> {op}
+            </label>
+          );})}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+          <OrcField label="Tamanho das pranchas"><input type="text" value={form.entregaveis.tamanhoPrancha} onChange={function(e){upd("entregaveis.tamanhoPrancha",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Formato digital"><input type="text" value={form.entregaveis.formatoDigital} onChange={function(e){upd("entregaveis.formatoDigital",e.target.value);}} style={B.inp}/></OrcField>
+        </div>
+        <OrcField label="Observações extras"><textarea value={form.entregaveis.extra} onChange={function(e){upd("entregaveis.extra",e.target.value);}} rows={2} style={Object.assign({},B.inp,{resize:"vertical",fontFamily:"inherit"})}/></OrcField>
+      </div>
+
+      <div style={B.card}>
+        <div style={{fontWeight:700,fontSize:"13px",marginBottom:"8px"}}>Prazos e foro</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+          <OrcField label="Prazo de entrega (dias)"><input type="number" value={form.prazos.prazoDias} onChange={function(e){upd("prazos.prazoDias",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Validade da proposta (dias)"><input type="number" value={form.prazos.validadeDias} onChange={function(e){upd("prazos.validadeDias",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Foro"><input type="text" value={form.prazos.foro} onChange={function(e){upd("prazos.foro",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Data do documento"><input type="date" value={form.prazos.dataDoc} onChange={function(e){upd("prazos.dataDoc",e.target.value);}} style={B.inp}/></OrcField>
+        </div>
+      </div>
+
+      <div style={B.card}>
+        <div style={{fontWeight:700,fontSize:"13px",marginBottom:"8px"}}>Dados bancários</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px"}}>
+          <OrcField label="Agência"><input type="text" value={form.bancario.agencia} onChange={function(e){upd("bancario.agencia",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Conta"><input type="text" value={form.bancario.conta} onChange={function(e){upd("bancario.conta",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Instituição"><input type="text" value={form.bancario.instituicao} onChange={function(e){upd("bancario.instituicao",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Empresa (nota fiscal)"><input type="text" value={form.bancario.empresa} onChange={function(e){upd("bancario.empresa",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="CNPJ"><input type="text" value={form.bancario.cnpj} onChange={function(e){upd("bancario.cnpj",e.target.value);}} style={B.inp}/></OrcField>
+          <OrcField label="Chave Pix"><input type="text" value={form.bancario.pix} onChange={function(e){upd("bancario.pix",e.target.value);}} style={B.inp}/></OrcField>
+        </div>
+      </div>
+
+      <div style={B.card}>
+        <div style={{fontWeight:700,fontSize:"13px",marginBottom:"8px"}}>Opções finais</div>
+        <div style={{display:"flex",gap:"14px",flexWrap:"wrap"}}>
+          <label style={{fontSize:"12px",display:"flex",alignItems:"center",gap:"5px"}}><input type="checkbox" checked={form.opcoes.incluirAssinatura} onChange={function(){toggleOpcao("incluirAssinatura");}}/> Incluir assinatura (orçamento)</label>
+          <label style={{fontSize:"12px",display:"flex",alignItems:"center",gap:"5px"}}><input type="checkbox" checked={form.opcoes.incluirCapa} onChange={function(){toggleOpcao("incluirCapa");}}/> Incluir capa</label>
+          <label style={{fontSize:"12px",display:"flex",alignItems:"center",gap:"5px"}}><input type="checkbox" checked={form.opcoes.incluirPortfolio1} onChange={function(){toggleOpcao("incluirPortfolio1");}}/> Incluir portfólio 1</label>
+          <label style={{fontSize:"12px",display:"flex",alignItems:"center",gap:"5px"}}><input type="checkbox" checked={form.opcoes.incluirPortfolio2} onChange={function(){toggleOpcao("incluirPortfolio2");}}/> Incluir portfólio 2</label>
+        </div>
+      </div>
+
+      {erro&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:"8px",padding:"10px 12px",fontSize:"13px",color:"#dc2626",marginBottom:"14px"}}>{erro}</div>}
+
+      <div style={{display:"flex",gap:"8px",flexWrap:"wrap",marginBottom:"1.5rem"}}>
+        <button onClick={salvar} disabled={salvando} style={Object.assign({},B.pri,{opacity:salvando?.6:1})}>{salvando?"Salvando...":"Salvar"}</button>
+        <button onClick={function(){gerarPreview("orcamento");}} style={B.sec}>Pré-visualizar orçamento</button>
+        <button onClick={function(){gerarPreview("contrato");}} style={B.sec}>Pré-visualizar contrato</button>
+        <button onClick={function(){imprimirOrcamento(formToRecordLike(form,editingId?orcamentos.find(function(o){return o.id===editingId;}):null),"orcamento");}} style={B.sec}>Imprimir orçamento</button>
+        <button onClick={function(){imprimirOrcamento(formToRecordLike(form,editingId?orcamentos.find(function(o){return o.id===editingId;}):null),"contrato");}} style={B.sec}>Imprimir contrato</button>
+      </div>
+
+      {previewHtml&&(
+        <div style={{border:"1px solid #e5e7eb",borderRadius:"8px",padding:"24px 28px",background:"#fff",marginBottom:"2rem"}} dangerouslySetInnerHTML={{__html:previewHtml}}/>
+      )}
     </div>
   );
 }
