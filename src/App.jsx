@@ -546,7 +546,7 @@ export default function App(){
         {tab==="tarefas"    && <TarefasTab tarefas={tarefas} saveTarefas={saveTarefas} team={team} projects={projects} authUser={authUser} currentMember={memberByEmail}/>}
       </div>
       <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>
-        Criado por MAR Consultoria 2026 - v2.1
+        Criado por MAR Consultoria 2026 - v2.2
       </div>
     </div>
   );
@@ -2219,7 +2219,7 @@ function UsuarioApp(props){
         )}
       </div>
       <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>
-        Criado por MAR Consultoria 2026 - v2.1
+        Criado por MAR Consultoria 2026 - v2.2
       </div>
     </div>
   );
@@ -2528,7 +2528,7 @@ function GestorApp(props){
           </div>
         )}
       </div>
-      <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>Criado por MAR Consultoria 2026 - v2.1</div>
+      <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>Criado por MAR Consultoria 2026 - v2.2</div>
     </div>
   );
 }
