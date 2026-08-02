@@ -1885,36 +1885,45 @@ function TarefasTab(props){
                 <div style={{fontSize:"13px",color:"#9ca3af",flexShrink:0,minWidth:"130px"}}>{t.projetoNome}{t.atividadeNome?" · "+t.atividadeNome:""}</div>
                 <div style={{fontSize:"13px",color:"#374151",flex:1,minWidth:"100px"}}>{t.descricao}</div>
                 <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0}}>{st.label}</span>
-                {isDel?(
-                  <div style={{display:"flex",gap:"5px",alignItems:"center",flexShrink:0}}>
-                    <select value={delegando.novoMembro} onChange={function(e){setDelegando({taskId:t.id,novoMembro:e.target.value});}} style={Object.assign({},B.inp,{fontSize:"11px",padding:"3px 8px",width:"130px"})}>
-                      <option value="">Para quem?</option>
-                      {team.filter(function(m){return m.id!==t.membroId;}).map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
-                    </select>
+                {!isDel&&<button onClick={function(){setDelegando({taskId:t.id,novoMembro:"",feito:"",falta:""});}} style={Object.assign({},B.ghost,{color:"#2563EB",fontSize:"12px",flexShrink:0,border:"1px solid #dbeafe",borderRadius:"6px",padding:"2px 8px"})}>Delegar</button>}
+                <button onClick={function(){if(window.confirm("Remover tarefa?"))saveTarefas(tarefas.filter(function(x){return x.id!==t.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",flexShrink:0,lineHeight:1})}>×</button>
+              </div>
+              {isDel&&(
+                <div style={{marginTop:"8px",padding:"10px",background:"#f9fafb",borderRadius:"8px",border:"1px solid #e5e7eb"}}>
+                  <select value={delegando.novoMembro} onChange={function(e){setDelegando(Object.assign({},delegando,{novoMembro:e.target.value}));}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px",width:"100%",marginBottom:"6px"})}>
+                    <option value="">Para quem?</option>
+                    {team.filter(function(m){return m.id!==t.membroId;}).map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
+                  </select>
+                  <textarea value={delegando.feito} onChange={function(e){setDelegando(Object.assign({},delegando,{feito:e.target.value}));}} placeholder="O que já foi feito?" rows={2} style={Object.assign({},B.inp,{fontSize:"12px",width:"100%",marginBottom:"6px",resize:"vertical",fontFamily:"inherit"})}/>
+                  <textarea value={delegando.falta} onChange={function(e){setDelegando(Object.assign({},delegando,{falta:e.target.value}));}} placeholder="O que falta fazer?" rows={2} style={Object.assign({},B.inp,{fontSize:"12px",width:"100%",marginBottom:"8px",resize:"vertical",fontFamily:"inherit"})}/>
+                  <div style={{display:"flex",gap:"6px",justifyContent:"flex-end"}}>
+                    <button onClick={function(){setDelegando(null);}} style={Object.assign({},B.sec,{fontSize:"12px",padding:"6px 12px"})}>Cancelar</button>
                     <button onClick={function(){
                       if(!delegando.novoMembro)return;
                       var nm=team.find(function(m){return m.id===delegando.novoMembro;});
                       saveTarefas(tarefas.map(function(x){
                         if(x.id!==t.id)return x;
-                        return Object.assign({},x,{membroId:delegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString()}]});
+                        return Object.assign({},x,{membroId:delegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString(),feito:delegando.feito||"",falta:delegando.falta||""}]});
                       }));
                       setDelegando(null);
-                    }} disabled={!delegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"11px",padding:"3px 10px"})}>✓</button>
-                    <button onClick={function(){setDelegando(null);}} style={Object.assign({},B.sec,{fontSize:"11px",padding:"3px 10px"})}>✕</button>
+                    }} disabled={!delegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"12px",padding:"6px 14px"})}>Confirmar delegação</button>
                   </div>
-                ):(
-                  <button onClick={function(){setDelegando({taskId:t.id,novoMembro:"",});}} style={Object.assign({},B.ghost,{color:"#2563EB",fontSize:"12px",flexShrink:0,border:"1px solid #dbeafe",borderRadius:"6px",padding:"2px 8px"})}>Delegar</button>
-                )}
-                <button onClick={function(){if(window.confirm("Remover tarefa?"))saveTarefas(tarefas.filter(function(x){return x.id!==t.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",flexShrink:0,lineHeight:1})}>×</button>
-              </div>
+                </div>
+              )}
               {acts.length>0&&(
                 <div style={{display:"grid",gridTemplateColumns:"repeat("+acts.length+",1fr)",gap:"6px",marginTop:"8px"}}>
                   {acts.map(function(a){return <button key={a.next} onClick={function(){changeStatus(t.id,a.next);}} style={{background:"#fff",border:"1px solid #e5e7eb",borderRadius:"7px",padding:"7px",fontSize:"12px",color:"#374151",cursor:"pointer",textAlign:"center",fontWeight:500}}>{a.icon} {a.label}</button>;})}
                 </div>
               )}
               {t.delegadoHistorico&&t.delegadoHistorico.length>0&&(
-                <div style={{marginTop:"6px",paddingTop:"6px",borderTop:"1px solid #f0f0f0",fontSize:"11px",color:"#9ca3af"}}>
-                  {t.delegadoHistorico.map(function(h,i){return <span key={i} style={{marginRight:"10px"}}>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</span>;})}
+                <div style={{marginTop:"6px",paddingTop:"6px",borderTop:"1px solid #f0f0f0"}}>
+                  {t.delegadoHistorico.map(function(h,i){return (
+                    <div key={i} style={{fontSize:"11px",color:"#9ca3af",marginBottom:"4px"}}>
+                      <div>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</div>
+                      {h.feito&&<div style={{color:"#374151",marginTop:"2px"}}>Feito: {h.feito}</div>}
+                      {h.falta&&<div style={{color:"#374151",marginTop:"2px"}}>Falta: {h.falta}</div>}
+                    </div>
+                  );})}
                 </div>
               )}
             </div>
@@ -1953,6 +1962,12 @@ function TarefasTab(props){
                         {t.concluidoEm&&<span style={{fontSize:"11px",color:"#15803d",fontWeight:600}}>✓ Conclusão: {new Date(t.concluidoEm).toLocaleDateString("pt-BR")}</span>}
                         {(t.delegadoHistorico||[]).map(function(h,hi){return <span key={hi} style={{fontSize:"11px",color:"#9ca3af"}}>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</span>;})}
                       </div>
+                      {(t.delegadoHistorico||[]).filter(function(h){return h.feito||h.falta;}).map(function(h,hi){return (
+                        <div key={hi} style={{fontSize:"11px",color:"#374151",marginTop:"4px",paddingLeft:"10px",borderLeft:"2px solid #e5e7eb"}}>
+                          {h.feito&&<div>Feito por {h.de}: {h.feito}</div>}
+                          {h.falta&&<div>Falta: {h.falta}</div>}
+                        </div>
+                      );})}
                     </div>
                     <button onClick={function(){saveTarefas(tarefas.filter(function(x){return x.id!==t.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",lineHeight:1,flexShrink:0})}>×</button>
                   </div>
@@ -2129,24 +2144,28 @@ function UsuarioApp(props){
                       </div>
                     )}
                     {uDelegando&&uDelegando.taskId===t.id?(
-                      <div style={{display:"flex",gap:"6px",alignItems:"center",marginTop:"4px"}}>
-                        <select value={uDelegando.novoMembro} onChange={function(e){setUDelegando({taskId:t.id,novoMembro:e.target.value});}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px"})}>
+                      <div style={{marginTop:"8px",padding:"10px",background:"#f9fafb",borderRadius:"8px",border:"1px solid #e5e7eb"}}>
+                        <select value={uDelegando.novoMembro} onChange={function(e){setUDelegando(Object.assign({},uDelegando,{novoMembro:e.target.value}));}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px",width:"100%",marginBottom:"6px"})}>
                           <option value="">Escolher colaborador...</option>
                           {team.filter(function(m){return currentMember&&m.id!==currentMember.id;}).map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
                         </select>
-                        <button onClick={function(){
-                          if(!uDelegando.novoMembro)return;
-                          var nm=team.find(function(m){return m.id===uDelegando.novoMembro;});
-                          saveTarefas(tarefas.map(function(x){
-                            if(x.id!==t.id)return x;
-                            return Object.assign({},x,{membroId:uDelegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString()}]});
-                          }));
-                          setUDelegando(null);
-                        }} disabled={!uDelegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"12px",padding:"6px 14px",flexShrink:0})}>Confirmar</button>
-                        <button onClick={function(){setUDelegando(null);}} style={Object.assign({},B.sec,{fontSize:"12px",padding:"6px 12px",flexShrink:0})}>Cancelar</button>
+                        <textarea value={uDelegando.feito} onChange={function(e){setUDelegando(Object.assign({},uDelegando,{feito:e.target.value}));}} placeholder="O que já foi feito?" rows={2} style={Object.assign({},B.inp,{fontSize:"12px",width:"100%",marginBottom:"6px",resize:"vertical",fontFamily:"inherit"})}/>
+                        <textarea value={uDelegando.falta} onChange={function(e){setUDelegando(Object.assign({},uDelegando,{falta:e.target.value}));}} placeholder="O que falta fazer?" rows={2} style={Object.assign({},B.inp,{fontSize:"12px",width:"100%",marginBottom:"8px",resize:"vertical",fontFamily:"inherit"})}/>
+                        <div style={{display:"flex",gap:"6px",justifyContent:"flex-end"}}>
+                          <button onClick={function(){setUDelegando(null);}} style={Object.assign({},B.sec,{fontSize:"12px",padding:"6px 12px"})}>Cancelar</button>
+                          <button onClick={function(){
+                            if(!uDelegando.novoMembro)return;
+                            var nm=team.find(function(m){return m.id===uDelegando.novoMembro;});
+                            saveTarefas(tarefas.map(function(x){
+                              if(x.id!==t.id)return x;
+                              return Object.assign({},x,{membroId:uDelegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString(),feito:uDelegando.feito||"",falta:uDelegando.falta||""}]});
+                            }));
+                            setUDelegando(null);
+                          }} disabled={!uDelegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"12px",padding:"6px 14px"})}>Confirmar delegação</button>
+                        </div>
                       </div>
                     ):(
-                      <button onClick={function(){setUDelegando({taskId:t.id,novoMembro:"",});}} style={{background:"transparent",border:"1px solid #dbeafe",borderRadius:"8px",padding:"7px",fontSize:"12px",color:"#2563EB",cursor:"pointer",width:"100%",textAlign:"center",marginTop:"4px"}}>Delegar para outro colaborador</button>
+                      <button onClick={function(){setUDelegando({taskId:t.id,novoMembro:"",feito:"",falta:""});}} style={{background:"transparent",border:"1px solid #dbeafe",borderRadius:"8px",padding:"7px",fontSize:"12px",color:"#2563EB",cursor:"pointer",width:"100%",textAlign:"center",marginTop:"4px"}}>Delegar para outro colaborador</button>
                     )}
                   </div>
                 );
@@ -2180,6 +2199,12 @@ function UsuarioApp(props){
                           {t.concluidoEm&&<span style={{fontSize:"11px",color:"#15803d",fontWeight:600}}>✓ Conclusão: {new Date(t.concluidoEm).toLocaleDateString("pt-BR")}</span>}
                           {(t.delegadoHistorico||[]).map(function(h,hi){return <span key={hi} style={{fontSize:"11px",color:"#9ca3af"}}>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</span>;})}
                         </div>
+                        {(t.delegadoHistorico||[]).filter(function(h){return h.feito||h.falta;}).map(function(h,hi){return (
+                          <div key={hi} style={{fontSize:"11px",color:"#374151",marginTop:"4px",paddingLeft:"10px",borderLeft:"2px solid #e5e7eb"}}>
+                            {h.feito&&<div>Feito por {h.de}: {h.feito}</div>}
+                            {h.falta&&<div>Falta: {h.falta}</div>}
+                          </div>
+                        );})}
                       </div>
                     );
                   })}
@@ -2359,27 +2384,36 @@ function GestorApp(props){
                     <div style={{fontWeight:700,fontSize:"13px",color:"#111",minWidth:"80px",flexShrink:0}}>{t.membroNome}</div>
                     <div style={{fontSize:"12px",color:"#9ca3af",flex:1}}>{t.projetoNome}{t.atividadeNome?" · "+t.atividadeNome:""} — {t.descricao}</div>
                     <span style={{fontSize:"11px",fontWeight:600,padding:"2px 9px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0}}>{st.label}</span>
-                    {isDel?(
-                      <div style={{display:"flex",gap:"5px",alignItems:"center"}}>
-                        <select value={delegando.novoMembro} onChange={function(e){setDelegando({taskId:t.id,novoMembro:e.target.value});}} style={Object.assign({},B.inp,{fontSize:"11px",padding:"3px 7px",width:"130px"})}>
-                          <option value="">Para quem?</option>
-                          {team.filter(function(m){return m.id!==t.membroId;}).map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
-                        </select>
+                    {!isDel&&<button onClick={function(){setDelegando({taskId:t.id,novoMembro:"",feito:"",falta:""});}} style={Object.assign({},B.ghost,{color:"#2563EB",fontSize:"12px",border:"1px solid #dbeafe",borderRadius:"6px",padding:"2px 8px"})}>Delegar</button>}
+                  </div>
+                  {isDel&&(
+                    <div style={{marginTop:"8px",padding:"10px",background:"#f9fafb",borderRadius:"8px",border:"1px solid #e5e7eb"}}>
+                      <select value={delegando.novoMembro} onChange={function(e){setDelegando(Object.assign({},delegando,{novoMembro:e.target.value}));}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px",width:"100%",marginBottom:"6px"})}>
+                        <option value="">Para quem?</option>
+                        {team.filter(function(m){return m.id!==t.membroId;}).map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
+                      </select>
+                      <textarea value={delegando.feito} onChange={function(e){setDelegando(Object.assign({},delegando,{feito:e.target.value}));}} placeholder="O que já foi feito?" rows={2} style={Object.assign({},B.inp,{fontSize:"12px",width:"100%",marginBottom:"6px",resize:"vertical",fontFamily:"inherit"})}/>
+                      <textarea value={delegando.falta} onChange={function(e){setDelegando(Object.assign({},delegando,{falta:e.target.value}));}} placeholder="O que falta fazer?" rows={2} style={Object.assign({},B.inp,{fontSize:"12px",width:"100%",marginBottom:"8px",resize:"vertical",fontFamily:"inherit"})}/>
+                      <div style={{display:"flex",gap:"6px",justifyContent:"flex-end"}}>
+                        <button onClick={function(){setDelegando(null);}} style={Object.assign({},B.sec,{fontSize:"12px",padding:"6px 12px"})}>Cancelar</button>
                         <button onClick={function(){
                           if(!delegando.novoMembro)return;
                           var nm=team.find(function(m){return m.id===delegando.novoMembro;});
-                          saveTarefas(tarefas.map(function(x){if(x.id!==t.id)return x;return Object.assign({},x,{membroId:delegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString()}]});}));
+                          saveTarefas(tarefas.map(function(x){if(x.id!==t.id)return x;return Object.assign({},x,{membroId:delegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString(),feito:delegando.feito||"",falta:delegando.falta||""}]});}));
                           setDelegando(null);
-                        }} disabled={!delegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"11px",padding:"3px 9px"})}>✓</button>
-                        <button onClick={function(){setDelegando(null);}} style={Object.assign({},B.sec,{fontSize:"11px",padding:"3px 9px"})}>✕</button>
+                        }} disabled={!delegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"12px",padding:"6px 14px"})}>Confirmar delegação</button>
                       </div>
-                    ):(
-                      <button onClick={function(){setDelegando({taskId:t.id,novoMembro:"",});}} style={Object.assign({},B.ghost,{color:"#2563EB",fontSize:"12px",border:"1px solid #dbeafe",borderRadius:"6px",padding:"2px 8px"})}>Delegar</button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                   {t.delegadoHistorico&&t.delegadoHistorico.length>0&&(
-                    <div style={{marginTop:"5px",fontSize:"11px",color:"#9ca3af",borderTop:"1px solid #f0f0f0",paddingTop:"5px"}}>
-                      {t.delegadoHistorico.map(function(h,i){return <span key={i} style={{marginRight:"10px"}}>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</span>;})}
+                    <div style={{marginTop:"5px",borderTop:"1px solid #f0f0f0",paddingTop:"5px"}}>
+                      {t.delegadoHistorico.map(function(h,i){return (
+                        <div key={i} style={{fontSize:"11px",color:"#9ca3af",marginBottom:"4px"}}>
+                          <div>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</div>
+                          {h.feito&&<div style={{color:"#374151",marginTop:"2px"}}>Feito: {h.feito}</div>}
+                          {h.falta&&<div style={{color:"#374151",marginTop:"2px"}}>Falta: {h.falta}</div>}
+                        </div>
+                      );})}
                     </div>
                   )}
                 </div>
@@ -2435,21 +2469,25 @@ function GestorApp(props){
                     </div>
                   )}
                   {uDelegando&&uDelegando.taskId===t.id?(
-                    <div style={{display:"flex",gap:"6px",alignItems:"center",marginTop:"4px"}}>
-                      <select value={uDelegando.novoMembro} onChange={function(e){setUDelegando({taskId:t.id,novoMembro:e.target.value});}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px"})}>
+                    <div style={{marginTop:"8px",padding:"10px",background:"#f9fafb",borderRadius:"8px",border:"1px solid #e5e7eb"}}>
+                      <select value={uDelegando.novoMembro} onChange={function(e){setUDelegando(Object.assign({},uDelegando,{novoMembro:e.target.value}));}} style={Object.assign({},B.inp,{fontSize:"12px",padding:"5px 8px",width:"100%",marginBottom:"6px"})}>
                         <option value="">Escolher colaborador...</option>
                         {team.filter(function(m){return !currentMember||m.id!==currentMember.id;}).map(function(m){return <option key={m.id} value={m.id}>{m.name}</option>;})}
                       </select>
-                      <button onClick={function(){
-                        if(!uDelegando.novoMembro)return;
-                        var nm=team.find(function(m){return m.id===uDelegando.novoMembro;});
-                        saveTarefas(tarefas.map(function(x){if(x.id!==t.id)return x;return Object.assign({},x,{membroId:uDelegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString()}]});}));
-                        setUDelegando(null);
-                      }} disabled={!uDelegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"12px",padding:"6px 14px",flexShrink:0})}>Confirmar</button>
-                      <button onClick={function(){setUDelegando(null);}} style={Object.assign({},B.sec,{fontSize:"12px",padding:"6px 12px",flexShrink:0})}>Cancelar</button>
+                      <textarea value={uDelegando.feito} onChange={function(e){setUDelegando(Object.assign({},uDelegando,{feito:e.target.value}));}} placeholder="O que já foi feito?" rows={2} style={Object.assign({},B.inp,{fontSize:"12px",width:"100%",marginBottom:"6px",resize:"vertical",fontFamily:"inherit"})}/>
+                      <textarea value={uDelegando.falta} onChange={function(e){setUDelegando(Object.assign({},uDelegando,{falta:e.target.value}));}} placeholder="O que falta fazer?" rows={2} style={Object.assign({},B.inp,{fontSize:"12px",width:"100%",marginBottom:"8px",resize:"vertical",fontFamily:"inherit"})}/>
+                      <div style={{display:"flex",gap:"6px",justifyContent:"flex-end"}}>
+                        <button onClick={function(){setUDelegando(null);}} style={Object.assign({},B.sec,{fontSize:"12px",padding:"6px 12px"})}>Cancelar</button>
+                        <button onClick={function(){
+                          if(!uDelegando.novoMembro)return;
+                          var nm=team.find(function(m){return m.id===uDelegando.novoMembro;});
+                          saveTarefas(tarefas.map(function(x){if(x.id!==t.id)return x;return Object.assign({},x,{membroId:uDelegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString(),feito:uDelegando.feito||"",falta:uDelegando.falta||""}]});}));
+                          setUDelegando(null);
+                        }} disabled={!uDelegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"12px",padding:"6px 14px"})}>Confirmar delegação</button>
+                      </div>
                     </div>
                   ):(
-                    <button onClick={function(){setUDelegando({taskId:t.id,novoMembro:"",});}} style={{background:"transparent",border:"1px solid #dbeafe",borderRadius:"8px",padding:"7px",fontSize:"12px",color:"#2563EB",cursor:"pointer",width:"100%",textAlign:"center",marginTop:"4px"}}>Delegar para outro colaborador</button>
+                    <button onClick={function(){setUDelegando({taskId:t.id,novoMembro:"",feito:"",falta:""});}} style={{background:"transparent",border:"1px solid #dbeafe",borderRadius:"8px",padding:"7px",fontSize:"12px",color:"#2563EB",cursor:"pointer",width:"100%",textAlign:"center",marginTop:"4px"}}>Delegar para outro colaborador</button>
                   )}
                 </div>
               );
@@ -2475,6 +2513,12 @@ function GestorApp(props){
                           {t.concluidoEm&&<span style={{fontSize:"11px",color:"#15803d",fontWeight:600}}>✓ Conclusão: {new Date(t.concluidoEm).toLocaleDateString("pt-BR")}</span>}
                           {(t.delegadoHistorico||[]).map(function(h,hi){return <span key={hi} style={{fontSize:"11px",color:"#9ca3af"}}>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</span>;})}
                         </div>
+                        {(t.delegadoHistorico||[]).filter(function(h){return h.feito||h.falta;}).map(function(h,hi){return (
+                          <div key={hi} style={{fontSize:"11px",color:"#374151",marginTop:"4px",paddingLeft:"10px",borderLeft:"2px solid #e5e7eb"}}>
+                            {h.feito&&<div>Feito por {h.de}: {h.feito}</div>}
+                            {h.falta&&<div>Falta: {h.falta}</div>}
+                          </div>
+                        );})}
                       </div>
                     );
                   })}
@@ -2565,6 +2609,12 @@ function HistTab(props){
                         {t.concluidoEm&&<span style={{fontSize:"11px",color:"#15803d",fontWeight:600}}>✓ Conclusão: {new Date(t.concluidoEm).toLocaleDateString("pt-BR")}</span>}
                         {(t.delegadoHistorico||[]).map(function(h,hi){return <span key={hi} style={{fontSize:"11px",color:"#9ca3af"}}>↳ {h.de} → {h.para} ({new Date(h.quando).toLocaleDateString("pt-BR")})</span>;})}
                       </div>
+                      {(t.delegadoHistorico||[]).filter(function(h){return h.feito||h.falta;}).map(function(h,hi){return (
+                        <div key={hi} style={{fontSize:"11px",color:"#374151",marginTop:"4px",paddingLeft:"10px",borderLeft:"2px solid #e5e7eb"}}>
+                          {h.feito&&<div>Feito por {h.de}: {h.feito}</div>}
+                          {h.falta&&<div>Falta: {h.falta}</div>}
+                        </div>
+                      );})}
                     </div>
                   </div>
                 </div>
