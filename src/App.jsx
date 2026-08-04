@@ -337,23 +337,25 @@ export default function App(){
 
   useEffect(function(){
     if(date!==TODAY)return;
-    setAlloc(function(prev){
-      var a=Object.assign({},prev);var ch=false;
-      tarefas.filter(function(t){return t.status!=="concluido";}).forEach(function(t){
-        if(!a[t.membroId])a[t.membroId]=[];
-        if(a[t.membroId].indexOf(t.projetoId)===-1){a[t.membroId]=[...a[t.membroId],t.projetoId];ch=true;}
-      });
-      return ch?a:prev;
+    var relevantes=tarefas.filter(function(t){return t.status!=="pendente"&&(t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(TODAY)));});
+
+    var a=Object.assign({},alloc);var chA=false;
+    relevantes.forEach(function(t){
+      if(!a[t.membroId])a[t.membroId]=[];
+      if(a[t.membroId].indexOf(t.projetoId)===-1){a[t.membroId]=[...a[t.membroId],t.projetoId];chA=true;}
     });
-    setAllocSubitems(function(prev){
-      var sis=Object.assign({},prev);var ch=false;
-      tarefas.filter(function(t){return t.status!=="concluido"&&t.atividadeId;}).forEach(function(t){
-        if(!sis[t.membroId])sis[t.membroId]={};
-        var ps=(sis[t.membroId][t.projetoId]||[]);
-        if(ps.indexOf(t.atividadeId)===-1){sis[t.membroId][t.projetoId]=[...ps,t.atividadeId];ch=true;}
-      });
-      return ch?sis:prev;
+
+    var subs=Object.assign({},allocSubitems);var chS=false;
+    relevantes.filter(function(t){return t.atividadeId;}).forEach(function(t){
+      if(!subs[t.membroId])subs[t.membroId]={};
+      var ps=(subs[t.membroId][t.projetoId]||[]);
+      if(ps.indexOf(t.atividadeId)===-1){subs[t.membroId]=Object.assign({},subs[t.membroId],{[t.projetoId]:[...ps,t.atividadeId]});chS=true;}
     });
+
+    if(!chA&&!chS)return;
+    if(chA)setAlloc(a);
+    if(chS)setAllocSubitems(subs);
+    persistAlloc(normAlloc(a),subs);
   },[tarefas]);
 
   var colorMap={};
