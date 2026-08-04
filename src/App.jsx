@@ -337,7 +337,12 @@ export default function App(){
 
   useEffect(function(){
     if(date!==TODAY)return;
-    var relevantes=tarefas.filter(function(t){return t.status!=="pendente"&&(t.status!=="concluido"||(t.concluidoEm&&t.concluidoEm.startsWith(TODAY)));});
+    var relevantes=tarefas.filter(function(t){
+      if(t.status==="em_andamento")return true;
+      if(t.status==="pausado")return !!(t.pausadoEm&&t.pausadoEm.startsWith(TODAY));
+      if(t.status==="concluido")return !!(t.concluidoEm&&t.concluidoEm.startsWith(TODAY));
+      return false;
+    });
 
     var a=Object.assign({},alloc);var chA=false;
     relevantes.forEach(function(t){
