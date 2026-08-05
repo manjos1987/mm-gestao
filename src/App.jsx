@@ -266,6 +266,8 @@ function LoginScreen(){
 
 export default function App(){
   var dbRef=useRef(null);
+  var historyLoadedRef=useRef(false);
+  var tarefasLoadedRef=useRef(false);
   var ts=useState("visao"); var tab=ts[0],setTab=ts[1];
   var cs=useState(INIT_C); var cont=cs[0],setCont=cs[1];
   var ps=useState(INIT_P); var projects=ps[0],setProjects=ps[1];
@@ -302,6 +304,8 @@ export default function App(){
         if(unsub1){unsub1();unsub1=null;}
         if(unsub2){unsub2();unsub2=null;}
         if(unsub3){unsub3();unsub3=null;}
+        historyLoadedRef.current=false;
+        tarefasLoadedRef.current=false;
         // Só abre conexão com o Firestore depois do login confirmado
         if(!user){setLoading(false);return;}
         var cfgRef=doc(db,"mm_app","config");
@@ -334,9 +338,11 @@ export default function App(){
           var h=snap.exists()?snap.data():{};
           setHistory(h);
           if(h[TODAY]){setAlloc(normAlloc(h[TODAY].alloc||{}));setAllocSubitems(h[TODAY].allocSubitems||{});}
+          historyLoadedRef.current=true;
           setLoading(false);
         },function(err){console.error(err);setLoading(false);});
         unsub3=onSnapshot(collection(db,"tarefas"),function(snap){
+          tarefasLoadedRef.current=true;
           setTarefas(snap.docs.map(function(d){return Object.assign({id:d.id},d.data());}));
         },function(err){console.error(err);});
       });
@@ -351,6 +357,7 @@ export default function App(){
 
   useEffect(function(){
     if(date!==TODAY)return;
+    if(!historyLoadedRef.current||!tarefasLoadedRef.current)return;
     var relevantes=tarefas.filter(function(t){
       if(t.status==="em_andamento")return true;
       if(t.status==="pausado")return !!(t.pausadoEm&&t.pausadoEm.startsWith(TODAY));
@@ -379,6 +386,7 @@ export default function App(){
 
   useEffect(function(){
     if(!dbRef.current)return;
+    if(!historyLoadedRef.current||!tarefasLoadedRef.current)return;
     var snap=tarefas.filter(function(x){return x.status!=="pendente"&&(x.status!=="concluido"||(x.concluidoEm&&x.concluidoEm.startsWith(TODAY)));}).map(function(x){return {id:x.id,membroNome:x.membroNome,projetoId:x.projetoId||"",projetoNome:x.projetoNome,atividadeNome:x.atividadeNome||"",descricao:x.descricao,status:x.status,iniciadoEm:x.iniciadoEm||null,concluidoEm:x.concluidoEm||null,delegadoHistorico:x.delegadoHistorico||[],atribuidoPor:x.atribuidoPor||""};});
     persist("history",{[TODAY]:Object.assign({},history[TODAY]||{},{tarefasSnap:snap})});
   },[tarefas]);
