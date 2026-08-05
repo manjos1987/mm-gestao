@@ -312,7 +312,10 @@ export default function App(){
         var histRef=doc(db,"mm_app","history");
         unsub1=onSnapshot(cfgRef,function(snap){
           if(!snap.exists()){
-            setDoc(cfgRef,{cont:INIT_C,projects:INIT_P,team:INIT_T,weights:DW,diary:{}});
+            // NUNCA recriar automaticamente com dados de exemplo — isso ja causou perda real
+            // de dados de producao. Se o doc realmente nao existir, isso precisa de intervencao
+            // manual deliberada, nao de uma escrita silenciosa no carregamento da pagina.
+            console.error("mm_app/config nao encontrado no Firestore. Nada foi escrito automaticamente.");
           } else {
             var d=snap.data();
             setCont(d.cont||INIT_C);
