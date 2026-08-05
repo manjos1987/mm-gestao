@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import * as XLSX from "xlsx";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from "recharts";
 import { initializeApp, getApps, getApp, deleteApp } from "firebase/app";
-import { getFirestore, doc, setDoc, updateDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs, getDoc } from "firebase/firestore";
+import { getFirestore, doc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, orderBy, limit, getDocs, getDoc, arrayUnion } from "firebase/firestore";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, updatePassword, sendPasswordResetEmail, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth";
 import html2canvas from "html2canvas";
 
@@ -294,13 +294,14 @@ export default function App(){
       var db=getFirestore(app);
       var auth=getAuth(app);
       dbRef.current=db;
-      var unsub1=null,unsub2=null;
+      var unsub1=null,unsub2=null,unsub3=null;
       var unsubAuth=onAuthStateChanged(auth,function(user){
         setAuthUser(user);
         setAuthLoading(false);
         // Cancela listeners anteriores se existirem
         if(unsub1){unsub1();unsub1=null;}
         if(unsub2){unsub2();unsub2=null;}
+        if(unsub3){unsub3();unsub3=null;}
         // Só abre conexão com o Firestore depois do login confirmado
         if(!user){setLoading(false);return;}
         var cfgRef=doc(db,"mm_app","config");
@@ -316,7 +317,17 @@ export default function App(){
             setWeights(d.weights||DW);
             setDiaryState(d.diary||{});
             setPlanning(d.planning||{});
-            setTarefas(d.tarefas||[]);
+            // Migracao unica: tarefas antigas viviam num array dentro deste doc, o que causava
+            // condicao de corrida (qualquer gravacao concorrente sobrescrevia o array inteiro e
+            // podia apagar tarefas de outras sessoes). Agora cada tarefa vira um doc proprio na
+            // colecao "tarefas", com escritas atomicas por item.
+            if(!d.tarefasMigrated&&Array.isArray(d.tarefas)&&d.tarefas.length){
+              Promise.all(d.tarefas.map(function(t){return setDoc(doc(db,"tarefas",t.id),t);}))
+                .then(function(){return setDoc(cfgRef,{tarefasMigrated:true},{merge:true});})
+                .catch(function(e){console.error(e);});
+            } else if(!d.tarefasMigrated){
+              setDoc(cfgRef,{tarefasMigrated:true},{merge:true});
+            }
           }
         },function(err){console.error(err);setOnline(false);});
         unsub2=onSnapshot(histRef,function(snap){
@@ -325,8 +336,11 @@ export default function App(){
           if(h[TODAY]){setAlloc(normAlloc(h[TODAY].alloc||{}));setAllocSubitems(h[TODAY].allocSubitems||{});}
           setLoading(false);
         },function(err){console.error(err);setLoading(false);});
+        unsub3=onSnapshot(collection(db,"tarefas"),function(snap){
+          setTarefas(snap.docs.map(function(d){return Object.assign({id:d.id},d.data());}));
+        },function(err){console.error(err);});
       });
-      return function(){unsubAuth();if(unsub1)unsub1();if(unsub2)unsub2();};
+      return function(){unsubAuth();if(unsub1)unsub1();if(unsub2)unsub2();if(unsub3)unsub3();};
     }catch(err){console.error(err);setLoading(false);setAuthLoading(false);setOnline(false);}
   },[]);
 
@@ -361,6 +375,12 @@ export default function App(){
     if(chA)setAlloc(a);
     if(chS)setAllocSubitems(subs);
     persistAlloc(normAlloc(a),subs);
+  },[tarefas]);
+
+  useEffect(function(){
+    if(!dbRef.current)return;
+    var snap=tarefas.filter(function(x){return x.status!=="pendente"&&(x.status!=="concluido"||(x.concluidoEm&&x.concluidoEm.startsWith(TODAY)));}).map(function(x){return {id:x.id,membroNome:x.membroNome,projetoId:x.projetoId||"",projetoNome:x.projetoNome,atividadeNome:x.atividadeNome||"",descricao:x.descricao,status:x.status,iniciadoEm:x.iniciadoEm||null,concluidoEm:x.concluidoEm||null,delegadoHistorico:x.delegadoHistorico||[],atribuidoPor:x.atribuidoPor||""};});
+    persist("history",{[TODAY]:Object.assign({},history[TODAY]||{},{tarefasSnap:snap})});
   },[tarefas]);
 
   var colorMap={};
@@ -413,11 +433,27 @@ export default function App(){
   function saveWeights(w){setWeights(w);persist("weights",w);}
   function saveDiary(d){setDiaryState(d);persist("diary",d);}
   function savePlanning(p){setPlanning(p);persist("planning",p);}
-  function saveTarefas(t){
-    setTarefas(t);
-    persist("tarefas",t);
-    var snap=t.filter(function(x){return x.status!=="pendente"&&(x.status!=="concluido"||(x.concluidoEm&&x.concluidoEm.startsWith(TODAY)));}).map(function(x){return {id:x.id,membroNome:x.membroNome,projetoId:x.projetoId||"",projetoNome:x.projetoNome,atividadeNome:x.atividadeNome||"",descricao:x.descricao,status:x.status,iniciadoEm:x.iniciadoEm||null,concluidoEm:x.concluidoEm||null,delegadoHistorico:x.delegadoHistorico||[],atribuidoPor:x.atribuidoPor||""};});
-    persist("history",{[TODAY]:Object.assign({},history[TODAY]||{},{tarefasSnap:snap})});
+  // Cada tarefa e um doc proprio na colecao "tarefas" — as 3 funcoes abaixo escrevem
+  // sempre um unico documento, nunca o array inteiro, entao a acao de uma sessao
+  // (iniciar/pausar/concluir/delegar/excluir uma tarefa) nao pode mais sobrescrever
+  // ou apagar tarefas alheias criadas/alteradas por outra sessao ao mesmo tempo.
+  async function criarTarefa(t){
+    if(!dbRef.current)return;
+    setSyncing(true);
+    try{await setDoc(doc(dbRef.current,"tarefas",t.id),t);}catch(e){console.error(e);}
+    setSyncing(false);
+  }
+  async function atualizarTarefa(id,patch){
+    if(!dbRef.current)return;
+    setSyncing(true);
+    try{await updateDoc(doc(dbRef.current,"tarefas",id),patch);}catch(e){console.error(e);}
+    setSyncing(false);
+  }
+  async function removerTarefa(id){
+    if(!dbRef.current)return;
+    setSyncing(true);
+    try{await deleteDoc(doc(dbRef.current,"tarefas",id));}catch(e){console.error(e);}
+    setSyncing(false);
   }
 
   async function genMsg(){
@@ -497,10 +533,10 @@ export default function App(){
   var isGestor=!!(authUser&&!isAdmin&&memberAcesso==="gestor");
   var currentMember=!isAdmin?memberByEmail:null;
   if(!isAdmin&&isGestor){
-    return <GestorApp authUser={authUser} handleLogout={handleLogout} tarefas={tarefas} saveTarefas={saveTarefas} currentMember={memberByEmail} team={team} projects={projects}/>;
+    return <GestorApp authUser={authUser} handleLogout={handleLogout} tarefas={tarefas} criarTarefa={criarTarefa} atualizarTarefa={atualizarTarefa} removerTarefa={removerTarefa} currentMember={memberByEmail} team={team} projects={projects}/>;
   }
   if(!isAdmin){
-    return <UsuarioApp authUser={authUser} handleLogout={handleLogout} tarefas={tarefas} currentMember={currentMember} saveTarefas={saveTarefas} team={team}/>;
+    return <UsuarioApp authUser={authUser} handleLogout={handleLogout} tarefas={tarefas} currentMember={currentMember} atualizarTarefa={atualizarTarefa} team={team}/>;
   }
 
   var TABS=[["visao","Visao Geral"],["hoje","Hoje"],["relatorio","Relatorio"],["projetos","Projetos"],["equipe","Equipe"],["historico","Historico"],["planejamento","Planejamento"],["tarefas","Tarefas"]];
@@ -552,7 +588,7 @@ export default function App(){
         {tab==="equipe"   && <EquipeTab team={team} saveTeam={saveTeam} weights={weights} saveWeights={saveWeights}/>}
         {tab==="historico"&& <HistTab history={history} projects={projects} cont={cont} team={team} colorMap={colorMap} saveHistory={function(h){setHistory(h);persist("history",h);}} tarefas={tarefas}/>}
         {tab==="planejamento"&& <PlanTab team={team} planning={planning} savePlanning={savePlanning}/>}
-        {tab==="tarefas"    && <TarefasTab tarefas={tarefas} saveTarefas={saveTarefas} team={team} projects={projects} authUser={authUser} currentMember={memberByEmail}/>}
+        {tab==="tarefas"    && <TarefasTab tarefas={tarefas} criarTarefa={criarTarefa} atualizarTarefa={atualizarTarefa} removerTarefa={removerTarefa} team={team} projects={projects} authUser={authUser} currentMember={memberByEmail}/>}
         {tab==="orcamentos" && isMaster && <OrcamentosTab db={dbRef.current} authUser={authUser}/>}
       </div>
       <div style={{textAlign:"center",padding:"2rem 1rem 1.5rem",fontSize:"11px",color:"#9ca3af"}}>
@@ -1790,7 +1826,7 @@ var TASK_ST={
 };
 
 function TarefasTab(props){
-  var tarefas=props.tarefas,saveTarefas=props.saveTarefas,team=props.team,projects=props.projects,authUser=props.authUser,currentMember=props.currentMember;
+  var tarefas=props.tarefas,criarTarefa=props.criarTarefa,atualizarTarefa=props.atualizarTarefa,removerTarefa=props.removerTarefa,team=props.team,projects=props.projects,authUser=props.authUser,currentMember=props.currentMember;
   var ps=useState(""); var pessoa=ps[0],setPessoa=ps[1];
   var prs=useState(""); var projeto=prs[0],setProjeto=prs[1];
   var ats=useState(""); var atividade=ats[0],setAtividade=ats[1];
@@ -1812,21 +1848,18 @@ function TarefasTab(props){
     var adminNome=ADMIN_NAMES[(authUser?authUser.email.toLowerCase():"")] || (authUser?authUser.email.split("@")[0]:"Admin");
     var atNome=atividade?(subitens.find(function(s){return s.id===atividade;})||{}).name||"":"";
     var nova={id:uid(),membroId:pessoa,membroNome:membro?membro.name:"",projetoId:projeto,projetoNome:proj?proj.name:"",atividadeId:atividade||null,atividadeNome:atNome,descricao:desc.trim(),status:"pendente",lida:false,criadoEm:new Date().toISOString(),atribuidoPor:adminNome,criadoPorEmail:authUser?authUser.email:"",iniciadoEm:null,pausadoEm:null,concluidoEm:null};
-    saveTarefas([...tarefas,nova]);
+    criarTarefa(nova);
     setPessoa("");setProjeto("");setAtividade("");setDesc("");
   }
 
   function changeStatus(taskId,newStatus){
     var now=new Date().toISOString();
-    saveTarefas(tarefas.map(function(t){
-      if(t.id!==taskId)return t;
-      return Object.assign({},t,{
-        status:newStatus,
-        iniciadoEm:newStatus==="em_andamento"&&!t.iniciadoEm?now:t.iniciadoEm,
-        pausadoEm:newStatus==="pausado"?now:t.pausadoEm,
-        concluidoEm:newStatus==="concluido"?now:t.concluidoEm,
-      });
-    }));
+    var t=tarefas.find(function(x){return x.id===taskId;});
+    var patch={status:newStatus};
+    if(newStatus==="em_andamento"&&!(t&&t.iniciadoEm))patch.iniciadoEm=now;
+    if(newStatus==="pausado")patch.pausadoEm=now;
+    if(newStatus==="concluido")patch.concluidoEm=now;
+    atualizarTarefa(taskId,patch);
   }
 
   function getActions(status){
@@ -1896,7 +1929,7 @@ function TarefasTab(props){
                 <div style={{fontSize:"13px",color:"#374151",flex:1,minWidth:"100px"}}>{t.descricao}</div>
                 <span style={{fontSize:"11px",fontWeight:600,padding:"3px 10px",borderRadius:"20px",background:st.bg,color:st.color,flexShrink:0}}>{st.label}</span>
                 {!isDel&&<button onClick={function(){setDelegando({taskId:t.id,novoMembro:"",feito:"",falta:""});}} style={Object.assign({},B.ghost,{color:"#2563EB",fontSize:"12px",flexShrink:0,border:"1px solid #dbeafe",borderRadius:"6px",padding:"2px 8px"})}>Delegar</button>}
-                <button onClick={function(){if(window.confirm("Remover tarefa?"))saveTarefas(tarefas.filter(function(x){return x.id!==t.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",flexShrink:0,lineHeight:1})}>×</button>
+                <button onClick={function(){if(window.confirm("Remover tarefa?"))removerTarefa(t.id);}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",flexShrink:0,lineHeight:1})}>×</button>
               </div>
               {isDel&&(
                 <div style={{marginTop:"8px",padding:"10px",background:"#f9fafb",borderRadius:"8px",border:"1px solid #e5e7eb"}}>
@@ -1911,10 +1944,7 @@ function TarefasTab(props){
                     <button onClick={function(){
                       if(!delegando.novoMembro)return;
                       var nm=team.find(function(m){return m.id===delegando.novoMembro;});
-                      saveTarefas(tarefas.map(function(x){
-                        if(x.id!==t.id)return x;
-                        return Object.assign({},x,{membroId:delegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString(),feito:delegando.feito||"",falta:delegando.falta||""}]});
-                      }));
+                      atualizarTarefa(t.id,{membroId:delegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:arrayUnion({de:t.membroNome,para:nm?nm.name:"",quando:new Date().toISOString(),feito:delegando.feito||"",falta:delegando.falta||""})});
                       setDelegando(null);
                     }} disabled={!delegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"12px",padding:"6px 14px"})}>Confirmar delegação</button>
                   </div>
@@ -1979,7 +2009,7 @@ function TarefasTab(props){
                         </div>
                       );})}
                     </div>
-                    <button onClick={function(){saveTarefas(tarefas.filter(function(x){return x.id!==t.id;}));}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",lineHeight:1,flexShrink:0})}>×</button>
+                    <button onClick={function(){removerTarefa(t.id);}} style={Object.assign({},B.ghost,{color:"#dc2626",fontSize:"18px",lineHeight:1,flexShrink:0})}>×</button>
                   </div>
                 </div>
               );
@@ -1992,7 +2022,7 @@ function TarefasTab(props){
 }
 
 function UsuarioApp(props){
-  var authUser=props.authUser,handleLogout=props.handleLogout,tarefas=props.tarefas,currentMember=props.currentMember,saveTarefas=props.saveTarefas,team=props.team||[];
+  var authUser=props.authUser,handleLogout=props.handleLogout,tarefas=props.tarefas,currentMember=props.currentMember,atualizarTarefa=props.atualizarTarefa,team=props.team||[];
   var ts=useState("minhas"); var tab=ts[0],setTab=ts[1];
   var sms=useState(false); var senhaMode=sms[0],setSenhaMode=sms[1];
   var udels=useState(null); var uDelegando=udels[0],setUDelegando=udels[1];
@@ -2029,22 +2059,17 @@ function UsuarioApp(props){
   var concluidas=minhasTarefas.filter(function(t){return t.status==="concluido";});
 
   function marcarLidas(){
-    var updated=tarefas.map(function(t){return (currentMember&&t.membroId===currentMember.id&&!t.lida)?Object.assign({},t,{lida:true}):t;});
-    saveTarefas(updated);
+    tarefas.filter(function(t){return currentMember&&t.membroId===currentMember.id&&!t.lida;}).forEach(function(t){atualizarTarefa(t.id,{lida:true});});
   }
 
   function changeStatus(taskId,newStatus){
     var now=new Date().toISOString();
-    var updated=tarefas.map(function(t){
-      if(t.id!==taskId)return t;
-      return Object.assign({},t,{
-        status:newStatus,
-        iniciadoEm:newStatus==="em_andamento"&&!t.iniciadoEm?now:t.iniciadoEm,
-        pausadoEm:newStatus==="pausado"?now:t.pausadoEm,
-        concluidoEm:newStatus==="concluido"?now:t.concluidoEm,
-      });
-    });
-    saveTarefas(updated);
+    var t=tarefas.find(function(x){return x.id===taskId;});
+    var patch={status:newStatus};
+    if(newStatus==="em_andamento"&&!(t&&t.iniciadoEm))patch.iniciadoEm=now;
+    if(newStatus==="pausado")patch.pausadoEm=now;
+    if(newStatus==="concluido")patch.concluidoEm=now;
+    atualizarTarefa(taskId,patch);
   }
 
   function getActions(status){
@@ -2166,10 +2191,7 @@ function UsuarioApp(props){
                           <button onClick={function(){
                             if(!uDelegando.novoMembro)return;
                             var nm=team.find(function(m){return m.id===uDelegando.novoMembro;});
-                            saveTarefas(tarefas.map(function(x){
-                              if(x.id!==t.id)return x;
-                              return Object.assign({},x,{membroId:uDelegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString(),feito:uDelegando.feito||"",falta:uDelegando.falta||""}]});
-                            }));
+                            atualizarTarefa(t.id,{membroId:uDelegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:arrayUnion({de:t.membroNome,para:nm?nm.name:"",quando:new Date().toISOString(),feito:uDelegando.feito||"",falta:uDelegando.falta||""})});
                             setUDelegando(null);
                           }} disabled={!uDelegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"12px",padding:"6px 14px"})}>Confirmar delegação</button>
                         </div>
@@ -2236,7 +2258,7 @@ function UsuarioApp(props){
 }
 
 function GestorApp(props){
-  var authUser=props.authUser,handleLogout=props.handleLogout,tarefas=props.tarefas,saveTarefas=props.saveTarefas,currentMember=props.currentMember,team=props.team||[],projects=props.projects||[];
+  var authUser=props.authUser,handleLogout=props.handleLogout,tarefas=props.tarefas,criarTarefa=props.criarTarefa,atualizarTarefa=props.atualizarTarefa,removerTarefa=props.removerTarefa,currentMember=props.currentMember,team=props.team||[],projects=props.projects||[];
   var ts=useState("minhas"); var tab=ts[0],setTab=ts[1];
   var sms=useState(false); var senhaMode=sms[0],setSenhaMode=sms[1];
   var sas=useState(""); var senhaAtual=sas[0],setSenhaAtual=sas[1];
@@ -2284,16 +2306,18 @@ function GestorApp(props){
     var proj=projects.find(function(p){return p.id===projeto;});
     var atNome=atividade?(subitens.find(function(s){return s.id===atividade;})||{}).name||"":"";
     var nova={id:uid(),membroId:pessoa,membroNome:membro?membro.name:"",projetoId:projeto,projetoNome:proj?proj.name:"",atividadeId:atividade||null,atividadeNome:atNome,descricao:desc.trim(),status:"pendente",lida:false,criadoEm:new Date().toISOString(),atribuidoPor:gestorNome,criadoPorEmail:gestorEmail,iniciadoEm:null,pausadoEm:null,concluidoEm:null};
-    saveTarefas([...tarefas,nova]);
+    criarTarefa(nova);
     setPessoa("");setProjeto("");setAtividade("");setDesc("");
   }
 
   function changeStatus(taskId,newStatus){
     var now=new Date().toISOString();
-    saveTarefas(tarefas.map(function(t){
-      if(t.id!==taskId)return t;
-      return Object.assign({},t,{status:newStatus,iniciadoEm:newStatus==="em_andamento"&&!t.iniciadoEm?now:t.iniciadoEm,pausadoEm:newStatus==="pausado"?now:t.pausadoEm,concluidoEm:newStatus==="concluido"?now:t.concluidoEm});
-    }));
+    var t=tarefas.find(function(x){return x.id===taskId;});
+    var patch={status:newStatus};
+    if(newStatus==="em_andamento"&&!(t&&t.iniciadoEm))patch.iniciadoEm=now;
+    if(newStatus==="pausado")patch.pausadoEm=now;
+    if(newStatus==="concluido")patch.concluidoEm=now;
+    atualizarTarefa(taskId,patch);
   }
   function getActions(status){
     if(status==="pendente")    return [{label:"Iniciar",icon:"▷",next:"em_andamento"}];
@@ -2309,7 +2333,7 @@ function GestorApp(props){
   var mConcluidas=minhasTarefas.filter(function(t){return t.status==="concluido";});
   var naoLidas=mAtivas.filter(function(t){return !t.lida&&t.status==="pendente";});
 
-  function marcarLidas(){saveTarefas(tarefas.map(function(t){return(currentMember&&t.membroId===currentMember.id&&!t.lida)?Object.assign({},t,{lida:true}):t;}));}
+  function marcarLidas(){tarefas.filter(function(t){return currentMember&&t.membroId===currentMember.id&&!t.lida;}).forEach(function(t){atualizarTarefa(t.id,{lida:true});});}
 
   return (
     <div style={{background:"#f9fafb",minHeight:"100vh",fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
@@ -2409,7 +2433,7 @@ function GestorApp(props){
                         <button onClick={function(){
                           if(!delegando.novoMembro)return;
                           var nm=team.find(function(m){return m.id===delegando.novoMembro;});
-                          saveTarefas(tarefas.map(function(x){if(x.id!==t.id)return x;return Object.assign({},x,{membroId:delegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString(),feito:delegando.feito||"",falta:delegando.falta||""}]});}));
+                          atualizarTarefa(t.id,{membroId:delegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:arrayUnion({de:t.membroNome,para:nm?nm.name:"",quando:new Date().toISOString(),feito:delegando.feito||"",falta:delegando.falta||""})});
                           setDelegando(null);
                         }} disabled={!delegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"12px",padding:"6px 14px"})}>Confirmar delegação</button>
                       </div>
@@ -2491,7 +2515,7 @@ function GestorApp(props){
                         <button onClick={function(){
                           if(!uDelegando.novoMembro)return;
                           var nm=team.find(function(m){return m.id===uDelegando.novoMembro;});
-                          saveTarefas(tarefas.map(function(x){if(x.id!==t.id)return x;return Object.assign({},x,{membroId:uDelegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:[...(x.delegadoHistorico||[]),{de:x.membroNome,para:nm?nm.name:"",quando:new Date().toISOString(),feito:uDelegando.feito||"",falta:uDelegando.falta||""}]});}));
+                          atualizarTarefa(t.id,{membroId:uDelegando.novoMembro,membroNome:nm?nm.name:"",lida:false,delegadoHistorico:arrayUnion({de:t.membroNome,para:nm?nm.name:"",quando:new Date().toISOString(),feito:uDelegando.feito||"",falta:uDelegando.falta||""})});
                           setUDelegando(null);
                         }} disabled={!uDelegando.novoMembro} style={Object.assign({},B.pri,{fontSize:"12px",padding:"6px 14px"})}>Confirmar delegação</button>
                       </div>
